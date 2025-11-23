@@ -7,8 +7,7 @@ import org.springframework.boot.runApplication
 import org.springframework.context.annotation.Bean
 
 @SpringBootApplication
-class ScrambbledApplication{
-}
+class ScrambbledApplication
 
 fun main(args: Array<String>) {
 	runApplication<ScrambbledApplication>(*args)
