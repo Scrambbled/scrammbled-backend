@@ -1,9 +1,12 @@
 package io.github.mrcabbagestick.scrambbled.game
 
+import io.github.mrcabbagestick.scrambbled.game.impl.TestGame.TestGame
+
+typealias GameId = String
 typealias GameSupplier = () -> GameTemplate
 
-enum class Games(val gameId: String, val gameSupplier: GameSupplier) {
-    ;
+enum class Games(val gameId: GameId, val gameSupplier: GameSupplier) {
+    TEST_GAME("test_game", ::TestGame);
 
     fun toGameDTO() = GameDTO(gameId)
 
@@ -15,7 +18,7 @@ enum class Games(val gameId: String, val gameSupplier: GameSupplier) {
             entries.forEach { game -> identifierGameMap[game.gameId] = game }
         }
 
-        fun getGameByIdentifier(identifier: String): Games?{
+        fun getGameByIdentifier(identifier: GameId): Games?{
             return identifierGameMap[identifier]
         }
     }

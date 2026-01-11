@@ -1,3 +1,5 @@
 package io.github.mrcabbagestick.scrambbled.session
 
-class SessionDTO()
+import io.github.mrcabbagestick.scrambbled.game.GameId
+
+data class SessionDTO(val gameId: GameId)

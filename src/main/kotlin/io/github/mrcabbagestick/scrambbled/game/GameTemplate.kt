@@ -1,10 +1,8 @@
 package io.github.mrcabbagestick.scrambbled.game
 
-abstract class GameTemplate(
-//    val socketEventHandlers: Map<String, DataListener> = HashMap()
-){
+import io.github.mrcabbagestick.scrambbled.user.User
 
-//    fun handleEvent(client: SocketIOClient, event: MessageEvent, ack: AckRequest): Boolean {
-//        socketEventHandlers.get()
-//    }
+abstract class GameTemplate(val game: Games){
+    abstract fun onUserJoin(user: User);
+    abstract fun onUserLeft(user: User);
 }
