@@ -1,11 +1,6 @@
 package io.github.mrcabbagestick.scrambbled.game
 
-import com.corundumstudio.socketio.AckRequest
-import com.corundumstudio.socketio.SocketIOClient
-import com.corundumstudio.socketio.listener.DataListener
-import io.github.mrcabbagestick.scrambbled.config.MessageEvent
-
-abstract class Game(
+abstract class GameTemplate(
 //    val socketEventHandlers: Map<String, DataListener> = HashMap()
 ){
 
