@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import io.github.mrcabbagestick.scrambbled.game.GameSpecificEvent
 import io.github.mrcabbagestick.scrambbled.session.SessionRegistry
 import io.github.mrcabbagestick.scrambbled.socket.listeners.ConnectListener
+import io.github.mrcabbagestick.scrambbled.socket.listeners.DisconnectListener
 import io.github.mrcabbagestick.scrambbled.user.User
 import jakarta.annotation.PreDestroy
 import org.springframework.beans.factory.annotation.Value
@@ -46,6 +47,7 @@ class SocketIOConfig {
         server = SocketIOServer(config)
 
         server.addConnectListener(ConnectListener())
+        server.addDisconnectListener(DisconnectListener())
 
         server.addEventListener("game-specific", GameSpecificEvent::class.java){ client, event, ack ->
             ack.sendAckData(event.gameEventName)

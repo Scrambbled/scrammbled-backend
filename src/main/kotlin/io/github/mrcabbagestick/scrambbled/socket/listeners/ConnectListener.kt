@@ -23,6 +23,6 @@ class ConnectListener : (SocketIOClient) -> Unit {
             return
         }
 
-        UserRegistry.registerUser(listener.sessionId, User(session))
+        UserRegistry.registerUser(listener.sessionId, User(session, listener.sessionId))
     }
 }
