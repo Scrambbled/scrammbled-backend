@@ -23,6 +23,9 @@ class ConnectListener : (SocketIOClient) -> Unit {
             return
         }
 
-        UserRegistry.registerUser(listener.sessionId, User(session, listener.sessionId))
+        val user = User(session, listener.sessionId)
+        UserRegistry.registerUser(listener.sessionId, user)
+
+        session.game.onUserJoin(user)
     }
 }

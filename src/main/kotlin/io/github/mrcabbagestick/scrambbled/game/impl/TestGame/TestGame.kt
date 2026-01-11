@@ -6,10 +6,10 @@ import io.github.mrcabbagestick.scrambbled.user.User
 
 class TestGame: GameTemplate(Games.TEST_GAME) {
     override fun onUserJoin(user: User) {
-        TODO("Not yet implemented")
+        println("User joined TestGame: ${user.userId}")
     }
 
     override fun onUserLeft(user: User) {
-        TODO("Not yet implemented")
+        println("User left TestGame: ${user.userId}")
     }
 }

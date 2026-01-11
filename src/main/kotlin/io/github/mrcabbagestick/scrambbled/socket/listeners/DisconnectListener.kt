@@ -5,7 +5,15 @@ import io.github.mrcabbagestick.scrambbled.user.UserRegistry
 
 class DisconnectListener: (SocketIOClient) -> Unit {
     override fun invoke(listener: SocketIOClient) {
-        UserRegistry.getUser(listener.sessionId)?.session?.removeUser(listener.sessionId)
-        UserRegistry.removeUser(listener.sessionId)
+        val userId = listener.sessionId
+        val user = UserRegistry.getUser(userId)
+
+        user?.session?.let {
+            it.game.onUserLeft(user)
+            it.removeUser(userId)
+        }
+
+        UserRegistry.removeUser(userId)
+
     }
 }
