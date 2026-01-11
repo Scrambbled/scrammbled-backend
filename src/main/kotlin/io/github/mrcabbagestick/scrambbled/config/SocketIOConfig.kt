@@ -1,19 +1,17 @@
 package io.github.mrcabbagestick.scrambbled.config
 
-import com.corundumstudio.socketio.AuthorizationListener
-import com.corundumstudio.socketio.AuthorizationResult
 import com.corundumstudio.socketio.SocketIOServer
-import com.corundumstudio.socketio.listener.EventInterceptor
-import com.corundumstudio.socketio.protocol.Event
+import com.corundumstudio.socketio.protocol.Packet
+import com.corundumstudio.socketio.protocol.PacketType
 import com.fasterxml.jackson.annotation.JsonProperty
 import io.github.mrcabbagestick.scrambbled.game.GameSpecificEvent
+import io.github.mrcabbagestick.scrambbled.session.SessionRegistry
+import io.github.mrcabbagestick.scrambbled.socket.listeners.ConnectListener
+import io.github.mrcabbagestick.scrambbled.user.User
 import jakarta.annotation.PreDestroy
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import tools.jackson.databind.annotation.JsonDeserialize
-import tools.jackson.databind.annotation.JsonSerialize
-import java.util.Objects
 import com.corundumstudio.socketio.Configuration as SocketIOConfiguration
 
 class MessageEvent(
@@ -37,11 +35,17 @@ class SocketIOConfig {
         val config = SocketIOConfiguration().apply {
             hostname = host
             port = this@SocketIOConfig.port.toInt()
+//            context = "/ws"
+        }
+
+        config.socketConfig.apply {
+            // Allow socketio server to start on the same port after restart
+            isReuseAddress = true
         }
 
         server = SocketIOServer(config)
 
-        server.addConnectListener { listener -> }
+        server.addConnectListener(ConnectListener())
 
         server.addEventListener("game-specific", GameSpecificEvent::class.java){ client, event, ack ->
             ack.sendAckData(event.gameEventName)
