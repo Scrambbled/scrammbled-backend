@@ -9,19 +9,9 @@ class ConnectListener : (SocketIOClient) -> Unit {
     override fun invoke(listener: SocketIOClient) {
         val data = listener.handshakeData.urlParams
 
-        val accessCode = data["accessCode"]?.get(0)
+        val accessCode = data["accessCode"]?.get(0) ?: return listener.disconnect()
 
-        if(accessCode == null){
-            listener.disconnect()
-            return
-        }
-
-        val session = SessionRegistry.getSession(accessCode)
-
-        if(session == null){
-            listener.disconnect()
-            return
-        }
+        val session = SessionRegistry.getSession(accessCode)?: return listener.disconnect()
 
         val user = User(session, listener.sessionId)
         UserRegistry.registerUser(listener.sessionId, user)
