@@ -1,9 +1,9 @@
 package io.github.mrcabbagestick.scrambbled.user
 
 import io.github.mrcabbagestick.scrambbled.session.Session
-import java.util.UUID
+import java.util.*
 
-class User(val session: Session, val userId: UUID){
+data class User(val session: Session, val userId: UUID){
     // This is possibly stupid, remove if so
     init {
         // Add user to their session

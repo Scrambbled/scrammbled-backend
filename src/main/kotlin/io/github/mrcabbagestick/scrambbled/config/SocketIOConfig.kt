@@ -1,14 +1,11 @@
 package io.github.mrcabbagestick.scrambbled.config
 
 import com.corundumstudio.socketio.SocketIOServer
-import com.corundumstudio.socketio.protocol.Packet
-import com.corundumstudio.socketio.protocol.PacketType
 import com.fasterxml.jackson.annotation.JsonProperty
-import io.github.mrcabbagestick.scrambbled.game.GameSpecificEvent
-import io.github.mrcabbagestick.scrambbled.session.SessionRegistry
+import io.github.mrcabbagestick.scrambbled.socket.event.GameSpecificEvent
 import io.github.mrcabbagestick.scrambbled.socket.listeners.ConnectListener
 import io.github.mrcabbagestick.scrambbled.socket.listeners.DisconnectListener
-import io.github.mrcabbagestick.scrambbled.user.User
+import io.github.mrcabbagestick.scrambbled.user.UserRegistry
 import jakarta.annotation.PreDestroy
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
@@ -49,8 +46,9 @@ class SocketIOConfig {
         server.addConnectListener(ConnectListener())
         server.addDisconnectListener(DisconnectListener())
 
-        server.addEventListener("game-specific", GameSpecificEvent::class.java){ client, event, ack ->
-            ack.sendAckData(event.gameEventName)
+        server.addEventListener("game-specific-event", GameSpecificEvent::class.java){ client, event, ack ->
+            val user = UserRegistry.getUser(client.sessionId)
+            user?.session?.onGameSpecificEvent(event, user, ack)
         }
 
         server.addEventListener("chat message", MessageEvent::class.java) {client, event, ack ->
