@@ -1,11 +1,12 @@
 package io.github.mrcabbagestick.tools
 
-import javax.script.Invocable
-
-fun <R> catchToNull(wrapper: () -> R): R?{
+public inline fun <R, reified E> catchToNull(wrapper: () -> R): R?{
     return try{
         wrapper()
     }catch(e: Exception){
-        null
+        when(e){
+            is E -> null
+            else -> throw e
+        }
     }
 }

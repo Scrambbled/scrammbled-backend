@@ -20,8 +20,14 @@ class TestGame: GameTemplate(Games.TEST_GAME) {
         else -> null
     }
 
-    override fun <T> handleEvent(eventName: String, eventData: T, user: User, ack: AckRequest) {
-        println("User('${user.userId}') called $eventName with data: $eventData")
+    override fun <T> handleEvent(eventName: String, eventData: T, user: User, ack: AckRequest) = when(eventName){
+        "test_event" -> handleTestEvent(eventName, eventData as TestEventData, user, ack)
+        else -> {}
+    }
+
+    fun handleTestEvent(eventName: String, data: TestEventData, user: User, ack: AckRequest){
+        println("$user called '$eventName' with data: $data")
+        ack.sendAckData("We done good")
     }
 }
 
