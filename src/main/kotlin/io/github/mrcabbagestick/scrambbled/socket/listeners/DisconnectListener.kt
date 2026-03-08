@@ -1,19 +1,29 @@
 package io.github.mrcabbagestick.scrambbled.socket.listeners
 
 import com.corundumstudio.socketio.SocketIOClient
-import io.github.mrcabbagestick.scrambbled.user.UserRegistry
+import com.corundumstudio.socketio.listener.DisconnectListener
+import io.github.mrcabbagestick.scrambbled.session.SessionService
+import io.github.mrcabbagestick.scrambbled.user.UserService
+import org.springframework.stereotype.Component
+import org.springframework.context.annotation.Lazy
 
-class DisconnectListener: (SocketIOClient) -> Unit {
-    override fun invoke(listener: SocketIOClient) {
-        val userId = listener.sessionId
-        val user = UserRegistry.getUser(userId)
+@Component
+class SocketDisconnectListener(
+    private val userService: UserService,
+    private val sessionService: SessionService,
+    @Lazy private val serverProvider: com.corundumstudio.socketio.SocketIOServer
+) : DisconnectListener {
 
-        user?.session?.let {
-            it.game.onUserLeft(user)
-            it.removeUser(userId)
+    override fun onDisconnect(client: SocketIOClient) {
+        val user = userService.getUser(client.sessionId) ?: return
+
+        val session = sessionService.getSession(user.accessCode)
+        session?.game?.onUserLeft(user, user.accessCode, serverProvider)
+
+        if(session?.game?.shouldTerminate() == true) {
+            sessionService.removeSession(user.accessCode)
         }
 
-        UserRegistry.removeUser(userId)
-
+        userService.removeUser(client.sessionId)
     }
 }

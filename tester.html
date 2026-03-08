@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scrambbled API & Socket Tester</title>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e2e; color: #cdd6f4; margin: 0; padding: 20px;
+            display: flex; flex-wrap: wrap; gap: 20px;
+        }
+        h1, h2, h3 { color: #89b4fa; margin-top: 0; font-size: 1.2rem;}
+        .panel {
+            background: #313244; padding: 20px; border-radius: 8px;
+            flex: 1; min-width: 250px; display: flex; flex-direction: column;
+            gap: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .row { display: flex; gap: 10px; align-items: center; }
+        input, select, textarea {
+            background: #181825; color: #cdd6f4; border: 1px solid #45475a;
+            padding: 8px; border-radius: 4px; width: 100%; font-family: monospace; box-sizing: border-box;
+        }
+        input[type="file"] { padding: 5px; }
+        button {
+            background: #89b4fa; color: #1e1e2e; border: none; padding: 8px 16px;
+            border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s; white-space: nowrap;
+        }
+        button:hover { background: #b4befe; }
+        button.danger { background: #f38ba8; }
+        button.danger:hover { background: #fba922; }
+
+        /* Logi - dodano white-space: pre-wrap dla poprawnego łamania linii w user data */
+        #logs {
+            background: #11111b; padding: 10px; border-radius: 4px;
+            height: 500px; overflow-y: auto; font-family: monospace; font-size: 13px;
+        }
+        .log-entry { margin-bottom: 5px; border-bottom: 1px solid #313244; padding-bottom: 5px; }
+        .log-time { color: #a6adc8; font-weight: bold; }
+        .log-msg { color: #a6e3a1; white-space: pre-wrap; word-wrap: break-word; display: inline-block; vertical-align: top;}
+        .log-err { color: #f38ba8; white-space: pre-wrap; }
+        .log-json {
+            background: #1e1e2e; color: #f9e2af; padding: 8px; border-radius: 4px;
+            display: block; margin-top: 5px; white-space: pre-wrap; word-wrap: break-word;
+        }
+
+        /* Galeria ikon */
+        .icon-gallery { display: flex; flex-wrap: wrap; gap: 10px; align-content: flex-start;}
+        .icon-card {
+            background: #181825; border: 1px solid #45475a; border-radius: 8px;
+            padding: 10px; text-align: center; width: 80px;
+        }
+        .icon-card img { width: 60px; height: 60px; object-fit: contain; }
+        .icon-label { font-size: 10px; color: #a6adc8; margin-top: 5px; word-break: break-all; }
+    </style>
+</head>
+<body>
+
+<div class="panel" style="max-width: 300px;">
+    <h2>1. REST API</h2>
+    <div>
+        <label>REST URL:</label>
+        <input type="text" id="restUrl" value="http://localhost:8080">
+    </div>
+    <div class="row">
+        <button onclick="getGames()">GET /game/all</button>
+        <button onclick="getIcons()">GET /icon/all</button>
+    </div>
+    <hr style="border-color: #45475a; width: 100%;">
+    <h3>Stwórz sesję</h3>
+    <div>
+        <label>Game ID:</label>
+        <input type="text" id="gameIdInput" value="test_game">
+    </div>
+    <button onclick="createSession()">POST /session/create</button>
+</div>
+
+<div class="panel" style="max-width: 350px;">
+    <h2>2. Socket.IO</h2>
+    <div>
+        <label>Socket URL:</label>
+        <input type="text" id="socketUrl" value="http://localhost:9999">
+    </div>
+    <div>
+        <label>Access Code (z REST API):</label>
+        <input type="text" id="accessCodeInput" placeholder="np. aBcD12">
+    </div>
+    <div class="row">
+        <button onclick="connectSocket()">Połącz</button>
+        <button class="danger" onclick="disconnectSocket()">Rozłącz</button>
+    </div>
+    <div id="socketStatus" style="color: #f38ba8; font-weight: bold;">Status: Rozłączony</div>
+
+    <hr style="border-color: #45475a; width: 100%;">
+    <h3>Wyślij Eventy</h3>
+
+    <div class="row">
+        <input type="text" id="chatMsg" placeholder="Wiadomość czatu">
+        <button onclick="sendChatMessage()">Chat</button>
+    </div>
+    <div class="row">
+        <button onclick="sendUserData()" style="width: 100%;">Wyślij 'user data'</button>
+    </div>
+
+    <div style="background: #181825; padding: 10px; border-radius: 4px; margin-top: 10px;">
+        <label>Game Specific Event</label>
+        <input type="text" id="gseEventName" value="test_event" style="margin-bottom: 5px;">
+        <textarea id="gsePayload" rows="2">{"message": "Hello z testera!"}</textarea>
+        <button onclick="sendGameSpecificEvent()" style="margin-top: 5px; width: 100%;">Wyślij GSE</button>
+    </div>
+</div>
+
+<div class="panel" style="max-width: 250px;">
+    <h2>3. Podgląd plików</h2>
+    <div id="filePreview" class="icon-gallery">
+        <span style="color: #6c7086; font-size: 13px;">Brak plików. Kliknij "GET /icon/all", aby załadować ikony z serwera.</span>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>4. Logi z serwera</h2>
+    <div id="logs"></div>
+    <button class="danger" onclick="document.getElementById('logs').innerHTML = ''" style="align-self: flex-end; margin-top: 10px;">Wyczyść logi</button>
+</div>
+
+<script>
+    let socket = null;
+    const logsDiv = document.getElementById('logs');
+
+    function log(msg, type = 'msg', payload = undefined) {
+        const time = new Date().toLocaleTimeString();
+        const colorClass = type === 'err' ? 'log-err' : 'log-msg';
+
+        let html = `<div class="log-entry">
+        <span class="log-time">[${time}]</span>
+        <span class="${colorClass}">${msg}</span>`;
+
+        // Jeśli payload istnieje (nie jest undefined)
+        if (payload !== undefined && payload !== null) {
+            if (typeof payload === 'object') {
+                // Ładne formatowanie dla obiektów JSON
+                html += `<pre class="log-json">${JSON.stringify(payload, null, 2)}</pre>`;
+            } else {
+                // Zwykłe wypisywanie dla tekstu z zachowaniem nowych linii (white-space: pre-wrap)
+                html += `<div style="margin-top: 5px; color: #cdd6f4; white-space: pre-wrap;">${payload}</div>`;
+            }
+        }
+
+        html += `</div>`;
+        logsDiv.innerHTML += html;
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+    }
+
+    async function getGames() {
+        try {
+            const url = document.getElementById('restUrl').value;
+            const res = await fetch(`${url}/game/all`);
+            const data = await res.json();
+            log("Pobrano gry:", 'msg', data);
+        } catch (e) { log(`Błąd: ${e.message}`, 'err'); }
+    }
+
+    async function getIcons() {
+        try {
+            const url = document.getElementById('restUrl').value;
+            const res = await fetch(`${url}/user/icon/all`);
+            const data = await res.json();
+            log("Pobrano ikony:", 'msg', data);
+
+            // --- NOWE: RENDEROWANIE PLIKÓW W PANELU ---
+            const previewDiv = document.getElementById('filePreview');
+            previewDiv.innerHTML = ''; // Czyścimy poprzednie pliki
+
+            if (data.length === 0) {
+                previewDiv.innerHTML = '<span style="color: #6c7086; font-size: 13px;">Serwer zwrócił pustą listę ikon.</span>';
+                return;
+            }
+
+            data.forEach(icon => {
+                // Budujemy URL do obrazka, np: http://localhost:8080/static/user_icons/sock_puppet_blue.png
+                const imgUrl = `${url}/${icon.path}`;
+
+                const card = document.createElement('div');
+                card.className = 'icon-card';
+
+                const img = document.createElement('img');
+                img.src = imgUrl;
+                img.alt = icon.name;
+                // Prosta obsługa błędów, jeśli serwer nie zwróci pliku
+                img.onerror = () => { img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" fill="%23f38ba8" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M4.285 4.285a.5.5 0 0 0 0 .707L7.293 8l-3.008 3.008a.5.5 0 0 0 .707.707L8 8.707l3.008 3.008a.5.5 0 0 0 .707-.707L8.707 8l3.008-3.008a.5.5 0 0 0-.707-.707L8 7.293 4.992 4.285a.5.5 0 0 0-.707 0z"/></svg>'; };
+
+                const label = document.createElement('div');
+                label.className = 'icon-label';
+                label.innerText = icon.name;
+
+                card.appendChild(img);
+                card.appendChild(label);
+                previewDiv.appendChild(card);
+            });
+
+        } catch (e) { log(`Błąd pobierania ikon: ${e.message}`, 'err'); }
+    }
+
+    async function createSession() {
+        try {
+            const url = document.getElementById('restUrl').value;
+            const gameId = document.getElementById('gameIdInput').value;
+            const res = await fetch(`${url}/session/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ gameId: gameId })
+            });
+
+            if (res.ok) {
+                const accessCode = await res.text();
+                log(`Utworzono sesję! Kod dostępu: ${accessCode}`);
+                document.getElementById('accessCodeInput').value = accessCode;
+            } else {
+                log(`Błąd tworzenia sesji: ${res.status}`, 'err');
+            }
+        } catch (e) { log(`Błąd: ${e.message}`, 'err'); }
+    }
+
+    /*function connectSocket() {
+        if (socket) socket.disconnect();
+        const url = document.getElementById('socketUrl').value;
+        const accessCode = document.getElementById('accessCodeInput').value;
+
+        if (!accessCode) return log("Brak accessCode! Wygeneruj sesję najpierw.", "err");
+
+        log(`Łączenie z ${url}/?accessCode=${accessCode}...`);
+        socket = io(url, { query: { accessCode: accessCode }, transports: ["websocket"] });
+
+        const statusLabel = document.getElementById('socketStatus');
+
+        socket.on("connect", () => {
+            statusLabel.innerText = `Status: Połączono (ID: ${socket.id})`;
+            statusLabel.style.color = "#a6e3a1";
+            log("Socket.IO połączony pomyślnie!");
+        });
+
+        socket.on("disconnect", () => {
+            statusLabel.innerText = "Status: Rozłączony";
+            statusLabel.style.color = "#f38ba8";
+            log("Socket.IO rozłączony!", "err");
+        });
+
+        socket.on("user_joined", (data) => log("[BROADCAST] Ktoś dołączył:", "msg", data));
+        socket.on("user_left", (data) => log("[BROADCAST] Ktoś wyszedł:", "msg", data));
+        socket.on("test_event_broadcast", (data) => log(`[BROADCAST] Test Event: ${data}`));
+
+        // Text wysłany z serwera zawierający \n będzie teraz poprawnie sformatowany dzięki white-space: pre-wrap
+        socket.on("user data", (data) => log(`[SERVER] Odpowiedź na user data:\n${data}`));
+    }*/
+
+    function connectSocket() {
+        if (socket) socket.disconnect();
+        const url = document.getElementById('socketUrl').value;
+        const accessCode = document.getElementById('accessCodeInput').value;
+
+        if (!accessCode) return log("Brak accessCode! Wygeneruj sesję najpierw.", "err");
+
+        log(`Łączenie z ${url}/?accessCode=${accessCode}...`);
+        socket = io(url, { query: { accessCode: accessCode }, transports: ["websocket"] });
+
+        const statusLabel = document.getElementById('socketStatus');
+
+        socket.on("connect", () => {
+            statusLabel.innerText = `Status: Połączono (ID: ${socket.id})`;
+            statusLabel.style.color = "#a6e3a1";
+            log("Socket.IO połączony pomyślnie!");
+        });
+
+        socket.on("disconnect", () => {
+            statusLabel.innerText = "Status: Rozłączony";
+            statusLabel.style.color = "#f38ba8";
+            log("Socket.IO rozłączony!", "err");
+        });
+
+        // --- Przechwytywanie KAŻDEGO eventu ---
+        socket.onAny((eventName, ...args) => {
+            // Brak danych w payloadzie
+            if (args.length === 0) {
+                log(`[EVENT: ${eventName}]`);
+                return;
+            }
+
+            // Jeśli jest jeden argument (najczęstszy przypadek)
+            if (args.length === 1) {
+                log(`[EVENT: ${eventName}]`, "msg", args[0]);
+                return;
+            }
+
+            // Jeśli serwer przysłał wiele argumentów na raz
+            log(`[EVENT: ${eventName}]`, "msg", args);
+        });
+    }
+
+    function disconnectSocket() {
+        if (socket) { socket.disconnect(); socket = null; }
+    }
+
+    function sendChatMessage() {
+        if(!socket || !socket.connected) return log("Nie jesteś połączony!", "err");
+        const msg = document.getElementById('chatMsg').value;
+        socket.emit("chat message", { message: msg }, (ack) => {
+            log(`[ACK] Serwer potwierdza czat: ${ack}`);
+        });
+    }
+
+    function sendUserData() {
+        if (!socket || !socket.connected) return log("Nie jesteś połączony!", "err");
+        socket.emit("user data", { data: "proszę o dane" });
+    }
+
+    function sendGameSpecificEvent() {
+        if (!socket || !socket.connected) return log("Nie jesteś połączony!", "err");
+        const eventName = document.getElementById('gseEventName').value;
+        let payload;
+        try {
+            payload = JSON.parse(document.getElementById('gsePayload').value);
+        } catch(e) { return log("Błąd parsowania JSON w payloadzie!", "err"); }
+
+        const wrapper = { eventName: eventName, data: payload };
+        log(`Wysyłanie GameSpecificEvent:`, "msg", wrapper);
+
+        socket.emit("game-specific-event", wrapper, (ack) => {
+            log(`[ACK] Game event potwierdzony:`, "msg", ack);
+        });
+    }
+</script>
+</body>
+</html>

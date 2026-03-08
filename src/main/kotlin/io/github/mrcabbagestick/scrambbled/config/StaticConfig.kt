@@ -5,11 +5,10 @@ import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
 
 @Configuration
-class StaticConfig: WebMvcConfigurer {
-
+class StaticConfig : WebMvcConfigurer {
     override fun addResourceHandlers(registry: ResourceHandlerRegistry) {
         registry
             .addResourceHandler("/static/user_icons/**")
-            .addResourceLocations("classpath:/static/user_icons")
+            .addResourceLocations("classpath:/static/user_icons/")
     }
 }

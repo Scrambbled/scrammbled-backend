@@ -6,18 +6,8 @@ import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/user")
-class UserController {
+class UserController(private val userService: UserService) {
 
     @GetMapping("/icon/all")
-    fun getUserIcons() = listOf(
-        UserIcon("sock_puppet_blue"),
-        UserIcon("sock_puppet_green"),
-        UserIcon("sock_puppet_pink"),
-        UserIcon("sock_puppet_purple"),
-        UserIcon("sock_puppet_yellow"),
-    )
-}
-
-data class UserIcon(val name: String){
-    val path: String = "static/user_icons/$name.png"
+    fun getUserIcons() = userService.getAvailableIcons()
 }

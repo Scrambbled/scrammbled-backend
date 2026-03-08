@@ -6,9 +6,8 @@ import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @RequestMapping("/game")
-class GameController {
+class GameController(private val gameService: GameService) {
 
     @GetMapping("/all")
-    fun getAllGames() = GameRepository.getAllGamesDTOs()
-
+    fun getAllGames() = gameService.getAllGamesDTOs()
 }

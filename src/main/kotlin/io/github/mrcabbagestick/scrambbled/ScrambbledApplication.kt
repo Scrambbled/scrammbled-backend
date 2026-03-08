@@ -1,12 +1,11 @@
 package io.github.mrcabbagestick.scrambbled
 
-import com.corundumstudio.socketio.Configuration
-import com.corundumstudio.socketio.SocketIOServer
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
-import org.springframework.context.annotation.Bean
+import org.springframework.scheduling.annotation.EnableScheduling
 
 @SpringBootApplication
+@EnableScheduling
 class ScrambbledApplication
 
 fun main(args: Array<String>) {
