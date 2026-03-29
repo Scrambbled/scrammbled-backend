@@ -25,11 +25,19 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
     private var consecutivePasses = 0
 
     private val sentencePool = listOf(
-        "KOT W BUTACH",
-        "ZUPA POMIDOROWA",
-        "WŁADCA PIERŚCIENI",
-        "STARA SZAFA",
-        "LATAJĄCY DYWAN"
+        "Bread remebers.",
+        "We are not electric.",
+        "Teachers do not cook.",
+        "Doctors have a rocket obviously.",
+        "Cat talks.",
+        "Robot comes.",
+        "Scientists show.",
+        "Scientists do not ring unexpectedly.",
+        "Dolphin dances loudly.",
+        "Cities have the solutions.",
+        "Robot is futuristic.",
+        "Dolphin has gigantic problems.",
+        "Computer calculates slowly."
     )
 
     override fun onUserJoin(user: User, accessCode: String, server: SocketIOServer) {
@@ -86,6 +94,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
             gameScores[it] = 0
             roundScores[it] = 0
         }
+        players.shuffle();
 
         baseSentence = sentencePool.random()
 
@@ -111,9 +120,20 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
         val isLongEnough = upperWord.length >= 2
 
         if (isUnique && canBeFormed && isLongEnough) {
-            // SUCCESS
             usedWords.add(upperWord)
-            val points = upperWord.length
+            val points = upperWord.length + upperWord.sumOf { char ->
+                when (char) {
+                    'Z' -> 7
+                    'J' -> 6
+                    'Q' -> 5
+                    'X' -> 4
+                    'K' -> 3
+                    'V' -> 2
+                    'B' -> 1
+                    else -> 0
+                }
+            }
+
             roundScores[user.userId] = (roundScores[user.userId] ?: 0) + points
 
             consecutivePasses = 0
@@ -123,7 +143,6 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
 
             advanceTurn(accessCode, server)
         } else {
-            // FAIL
             val reason = when {
                 !isLongEnough -> "Za krótkie!"
                 !isUnique -> "To słowo zostało już użyte!"
@@ -158,6 +177,8 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
         val roundWinnerId = roundScores.maxByOrNull { it.value }?.key
         if (roundWinnerId != null) {
             gameScores[roundWinnerId] = (gameScores[roundWinnerId] ?: 0) + 1
+
+            server.getRoomOperations(accessCode).sendEvent("round_end", EndRoundPayload(roundWinnerId, roundScores))
             server.getRoomOperations(accessCode).sendEvent("chat message", "Runda zakończona! Gracz ${roundWinnerId.toString().substring(0,5)} wygrywa rundę.")
         }
 
@@ -172,6 +193,9 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
             baseSentence = sentencePool.random()
 
             usedWords.clear()
+
+            players.sortBy { gameScores[it] ?: 0 }
+            currentPlayerIndex = 0
 
             players.forEach {
                 roundScores[it] = 0
@@ -217,6 +241,11 @@ data class WordResultPayload(
     val pointsGained: Int,
     val message: String,
     val updatedScores: Map<UUID, Int>
+)
+
+data class EndRoundPayload(
+    val winnerId: UUID?,
+    val scores: Map<UUID, Int>
 )
 
 data class GameOverPayload(
