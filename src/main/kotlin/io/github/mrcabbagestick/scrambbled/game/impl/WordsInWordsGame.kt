@@ -157,6 +157,8 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
     private fun handlePass(user: User, accessCode: String, server: SocketIOServer) {
         if (players[currentPlayerIndex] != user.userId) return
 
+        val payload = PlayerPassedPayload(user.userId)
+        server.getRoomOperations(accessCode).sendEvent("user_passed", payload)
         server.getRoomOperations(accessCode).sendEvent("chat message", "Gracz ${user.userId.toString().substring(0,5)} pasuje.")
 
         consecutivePasses++
@@ -241,6 +243,10 @@ data class WordResultPayload(
     val pointsGained: Int,
     val message: String,
     val updatedScores: Map<UUID, Int>
+)
+
+data class PlayerPassedPayload(
+    val playerId: UUID
 )
 
 data class EndRoundPayload(
