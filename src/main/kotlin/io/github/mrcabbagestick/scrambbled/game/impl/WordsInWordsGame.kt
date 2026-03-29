@@ -25,7 +25,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
     private var consecutivePasses = 0
 
     private val sentencePool = listOf(
-        "Bread remebers.",
+        "Bread remembers.",
         "We are not electric.",
         "Teachers do not cook.",
         "Doctors have a rocket obviously.",
