@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
@@ -23,8 +24,8 @@ class SessionController(private val sessionService: SessionService, private val 
 
     @GetMapping("/check-join")
     fun checkJoinAbility(
-        @RequestBody accessCode: String,
-        @RequestBody nickname: String
+        @RequestParam accessCode: String,
+        @RequestParam nickname: String
     ): ResponseEntity<String> {
         // 1. Check if access code exists
         val session = sessionService.getSession(accessCode)

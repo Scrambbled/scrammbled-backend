@@ -39,6 +39,9 @@ class SocketIOConfig(
             hostname = host
             port = this@SocketIOConfig.port.toInt()
             socketConfig.isReuseAddress = true
+
+            maxFramePayloadLength = 40 * 1024 * 1024
+            maxHttpContentLength = 40 * 1024 * 1024
         }
 
         server = SocketIOServer(config)
