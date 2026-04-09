@@ -2,6 +2,7 @@ package io.github.mrcabbagestick.scrambbled.config
 
 import com.corundumstudio.socketio.SocketIOServer
 import com.fasterxml.jackson.annotation.JsonProperty
+import io.github.mrcabbagestick.scrambbled.game.DictionaryAware
 import io.github.mrcabbagestick.scrambbled.session.SessionService
 import io.github.mrcabbagestick.scrambbled.socket.event.GameSpecificEvent
 import io.github.mrcabbagestick.scrambbled.socket.listeners.SocketConnectListener
@@ -82,8 +83,10 @@ class SocketIOConfig(
 
             val inputStream = ByteArrayInputStream(event.data)
             val customDict = dictionaryService.parseCustomDictionary("custom_${session.accessCode}", inputStream)
-
-            session.customDictionary = customDict
+            
+            if (session.game is DictionaryAware) {
+                session.game.setDictionary(customDict)
+            }
 
             server.getRoomOperations(session.accessCode)
                 .sendEvent("chat message", "Host uploaded a custom dictionary: ${event.filename} (${customDict.wordCount} słów).")

@@ -1,6 +1,8 @@
 package io.github.mrcabbagestick.scrambbled.session
 
+import io.github.mrcabbagestick.scrambbled.game.DictionaryAware
 import io.github.mrcabbagestick.scrambbled.game.GameService
+import io.github.mrcabbagestick.scrambbled.tools.dictionary.DictionaryService
 import org.springframework.scheduling.TaskScheduler
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -10,13 +12,19 @@ import java.util.concurrent.ConcurrentHashMap
 @Service
 class SessionService(
     private val gameService: GameService,
-    private val taskScheduler: TaskScheduler
+    private val taskScheduler: TaskScheduler,
+    private val dictionaryService: DictionaryService
 ) {
     private val activeSessions = ConcurrentHashMap<String, Session>()
 
     fun createSession(gameId: String): String? {
         val gameInstance = gameService.getGameInstance(gameId) ?: return null
         val accessCode = generateAccessCode()
+
+        if(gameInstance is DictionaryAware) {
+            gameInstance.setDictionary(dictionaryService.getGlobalDictionary("en"))
+        }
+        // TODO: Change to being loaded from config
 
         val session = Session(accessCode, gameInstance)
         activeSessions[accessCode] = session

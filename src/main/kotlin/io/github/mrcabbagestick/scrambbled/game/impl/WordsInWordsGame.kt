@@ -4,12 +4,14 @@ import com.corundumstudio.socketio.AckRequest
 import com.corundumstudio.socketio.SocketIOServer
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
+import io.github.mrcabbagestick.scrambbled.game.DictionaryAware
 import io.github.mrcabbagestick.scrambbled.game.GameTemplate
 import io.github.mrcabbagestick.scrambbled.game.Games
+import io.github.mrcabbagestick.scrambbled.tools.dictionary.WordDictionary
 import io.github.mrcabbagestick.scrambbled.user.User
 import java.util.UUID
 
-class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
+class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
 
     private val players = mutableListOf<UUID>()
 
@@ -23,6 +25,12 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
     private var maxRounds = 3
     private var currentPlayerIndex = 0
     private var consecutivePasses = 0
+
+    private var activeDictionary: WordDictionary? = null
+
+    override fun setDictionary(dictionary: WordDictionary?) {
+        this.activeDictionary = dictionary
+    }
 
     private val sentencePool = listOf(
         "Bread remembers.",
@@ -119,7 +127,9 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
         val canBeFormed = canFormWord(upperWord, baseSentence)
         val isLongEnough = upperWord.length >= 2
 
-        if (isUnique && canBeFormed && isLongEnough) {
+        val isRealWord = activeDictionary?.isValidWord(upperWord) ?: false
+
+        if (isUnique && canBeFormed && isLongEnough && isRealWord) {
             usedWords.add(upperWord)
             val points = upperWord.length + upperWord.sumOf { char ->
                 when (char) {
