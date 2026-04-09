@@ -2,6 +2,7 @@ package io.github.mrcabbagestick.scrambbled.session
 
 import io.github.mrcabbagestick.scrambbled.game.GameService
 import io.github.mrcabbagestick.scrambbled.game.impl.TestGame
+import io.github.mrcabbagestick.scrambbled.tools.dictionary.DictionaryService
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.ExtendWith
@@ -18,6 +19,8 @@ class SessionServiceTest {
     private lateinit var gameService: GameService
     @Mock
     private lateinit var taskScheduler: TaskScheduler
+    @Mock
+    private lateinit var dictionaryService: DictionaryService
     @InjectMocks
     private lateinit var sessionService: SessionService
 
