@@ -30,7 +30,7 @@ class RpsGameTest {
     @Test
     fun `should notify room when first player joins`() {
         // given
-        val user1 = User(UUID.randomUUID(), roomCode)
+        val user1 = User(UUID.randomUUID(), roomCode, "Gracz 1", "default")
 
         // when
         game.onUserJoin(user1, roomCode, server)
@@ -45,8 +45,8 @@ class RpsGameTest {
     @Test
     fun `should start game when second player joins`() {
         // given
-        val user1 = User(UUID.randomUUID(), roomCode)
-        val user2 = User(UUID.randomUUID(), roomCode)
+        val user1 = User(UUID.randomUUID(), roomCode, "Gracz 1", "default")
+        val user2 = User(UUID.randomUUID(), roomCode, "Gracz 2", "default")
 
         // when
         game.onUserJoin(user1, roomCode, server)

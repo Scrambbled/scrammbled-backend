@@ -52,15 +52,15 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
         if (!isGameStarted && !players.contains(user.userId)) {
             players.add(user.userId)
             val playerNumber = players.size
-            server.getRoomOperations(accessCode).sendEvent("chat message", "Gracz ${user.userId.toString().substring(0,5)} dołączył jako Gracz $playerNumber.")
+            server.getRoomOperations(accessCode).sendEvent("chat message", "Gracz ${user.nickname} dołączył jako Gracz $playerNumber.")
         } else if (isGameStarted && !players.contains(user.userId)) {
-            server.getRoomOperations(accessCode).sendEvent("chat message", "Gracz ${user.userId.toString().substring(0,5)} dołączył jako Obserwator.")
+            server.getRoomOperations(accessCode).sendEvent("chat message", "Gracz ${user.nickname} dołączył jako Obserwator.")
         }
     }
 
     override fun onUserLeft(user: User, accessCode: String, server: SocketIOServer) {
         players.remove(user.userId)
-        server.getRoomOperations(accessCode).sendEvent("chat message", "Gracz ${user.userId.toString().substring(0,5)} opuścił grę.")
+        server.getRoomOperations(accessCode).sendEvent("chat message", "Gracz ${user.nickname} opuścił grę.")
         if (players.isEmpty()) isGameStarted = false
     }
 
