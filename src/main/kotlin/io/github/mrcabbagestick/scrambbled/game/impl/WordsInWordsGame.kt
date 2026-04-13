@@ -18,6 +18,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
     private val usedWords = mutableSetOf<String>()
 
     private var isGameStarted = false
+    private var betweenRounds = false;
     private var baseSentence: String = ""
     private var currentRound = 1
     private var maxRounds = 3
@@ -62,6 +63,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
         "start_game" -> StartGameData::class.java
         "submit_word" -> SubmitWordData::class.java
         "pass" -> Any::class.java
+        "start_round" -> Any::class.java
         else -> null
     }
 
@@ -77,6 +79,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
             "start_game" -> handleStartGame(eventData as StartGameData, accessCode, server)
             "submit_word" -> handleSubmitWord((eventData as SubmitWordData).word, user, accessCode, server)
             "pass" -> handlePass(user, accessCode, server)
+            "start_round" -> handleStartRound(accessCode, server)
         }
     }
 
@@ -88,6 +91,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
         currentRound = 1
         currentPlayerIndex = 0
         consecutivePasses = 0
+        betweenRounds = false
         usedWords.clear()
 
         players.forEach {
@@ -100,6 +104,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
 
         val payload = GameStartedPayload(baseSentence, maxRounds, players)
         server.getRoomOperations(accessCode).sendEvent("game_started", payload)
+        server.getRoomOperations(accessCode).sendEvent("new_round", StartRoundPayload(currentRound))
 
         broadcastTurnStart(accessCode, server)
     }
@@ -112,6 +117,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
 
     private fun handleSubmitWord(word: String, user: User, accessCode: String, server: SocketIOServer) {
         if (players[currentPlayerIndex] != user.userId) return
+        if (betweenRounds) return
 
         val upperWord = word.uppercase()
 
@@ -156,6 +162,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
 
     private fun handlePass(user: User, accessCode: String, server: SocketIOServer) {
         if (players[currentPlayerIndex] != user.userId) return
+        if (betweenRounds) return
 
         val payload = PlayerPassedPayload(user.userId)
         server.getRoomOperations(accessCode).sendEvent("user_passed", payload)
@@ -163,6 +170,15 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
 
         consecutivePasses++
         advanceTurn(accessCode, server)
+    }
+
+    private fun handleStartRound(accessCode: String, server: SocketIOServer) {
+        if (!betweenRounds) return
+        betweenRounds = false
+
+        server.getRoomOperations(accessCode).sendEvent("new_round", StartRoundPayload(currentRound))
+        server.getRoomOperations(accessCode).sendEvent("chat message", "Rozpoczyna się runda $currentRound!")
+        broadcastTurnStart(accessCode, server)
     }
 
     private fun advanceTurn(accessCode: String, server: SocketIOServer) {
@@ -190,6 +206,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
             server.getRoomOperations(accessCode).sendEvent("game_over", payload)
             isGameStarted = false
         } else {
+            betweenRounds = true
             currentRound++
             consecutivePasses = 0
             baseSentence = sentencePool.random()
@@ -202,9 +219,6 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS) {
             players.forEach {
                 roundScores[it] = 0
             }
-
-            server.getRoomOperations(accessCode).sendEvent("chat message", "Rozpoczyna się runda $currentRound!")
-            broadcastTurnStart(accessCode, server)
         }
     }
 
@@ -247,6 +261,10 @@ data class WordResultPayload(
 
 data class PlayerPassedPayload(
     val playerId: UUID
+)
+
+data class StartRoundPayload(
+    val round: Int
 )
 
 data class EndRoundPayload(
