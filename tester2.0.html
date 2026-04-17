@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scrambbled API & Socket Tester</title>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1e1e2e; color: #cdd6f4; margin: 0; padding: 20px;
+            display: flex; flex-wrap: wrap; gap: 20px;
+        }
+        h1, h2, h3 { color: #89b4fa; margin-top: 0; font-size: 1.2rem;}
+        .panel {
+            background: #313244; padding: 20px; border-radius: 8px;
+            flex: 1; min-width: 250px; display: flex; flex-direction: column;
+            gap: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .row { display: flex; gap: 10px; align-items: center; }
+        input, select, textarea {
+            background: #181825; color: #cdd6f4; border: 1px solid #45475a;
+            padding: 8px; border-radius: 4px; width: 100%; font-family: monospace; box-sizing: border-box;
+        }
+        input[type="file"] { padding: 5px; }
+        button {
+            background: #89b4fa; color: #1e1e2e; border: none; padding: 8px 16px;
+            border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s; white-space: nowrap;
+        }
+        button:hover { background: #b4befe; }
+        button.danger { background: #f38ba8; }
+        button.danger:hover { background: #fba922; }
+
+        #logs {
+            background: #11111b; padding: 10px; border-radius: 4px;
+            height: 600px; overflow-y: auto; font-family: monospace; font-size: 13px;
+        }
+        .log-entry { margin-bottom: 5px; border-bottom: 1px solid #313244; padding-bottom: 5px; }
+        .log-time { color: #a6adc8; font-weight: bold; }
+        .log-msg { color: #a6e3a1; white-space: pre-wrap; word-wrap: break-word; display: inline-block; vertical-align: top;}
+        .log-err { color: #f38ba8; white-space: pre-wrap; font-weight: bold;}
+        .log-sys { color: #f9e2af; font-style: italic; white-space: pre-wrap; display: inline-block;}
+        .log-chat { color: #89dceb; font-weight: bold; display: inline-block;}
+        .log-json {
+            background: #1e1e2e; color: #cdd6f4; padding: 8px; border-radius: 4px;
+            display: block; margin-top: 5px; white-space: pre-wrap; word-wrap: break-word; font-size: 11px;
+        }
+
+        .icon-gallery { display: flex; flex-wrap: wrap; gap: 10px; align-content: flex-start;}
+        .icon-card {
+            background: #181825; border: 1px solid #45475a; border-radius: 8px;
+            padding: 10px; text-align: center; width: 80px;
+        }
+        .icon-card img { width: 60px; height: 60px; object-fit: contain; }
+        .icon-label { font-size: 10px; color: #a6adc8; margin-top: 5px; word-break: break-all; }
+    </style>
+</head>
+<body>
+
+<div class="panel" style="max-width: 300px;">
+    <h2>1. REST API</h2>
+    <div>
+        <label>REST URL:</label>
+        <input type="text" id="restUrl" value="http://localhost:8080">
+    </div>
+    <div class="row">
+        <button onclick="getGames()">GET /game/all</button>
+        <button onclick="getIcons()">GET /icon/all</button>
+    </div>
+    <hr style="border-color: #45475a; width: 100%;">
+    <h3>Stwórz sesję</h3>
+    <div>
+        <label>Game ID:</label>
+        <input type="text" id="gameIdInput" value="words_in_words_game">
+    </div>
+    <button onclick="createSession()">POST /session/create</button>
+</div>
+
+<div class="panel" style="max-width: 350px;">
+    <h2>2. Socket.IO & Gracz</h2>
+    <div>
+        <label>Socket URL:</label>
+        <input type="text" id="socketUrl" value="http://localhost:9999">
+    </div>
+
+    <div class="row" style="margin-top: 5px;">
+        <div style="flex: 1;">
+            <label>Nickname:</label>
+            <input type="text" id="nicknameInput" value="Tester123">
+        </div>
+        <div style="flex: 1;">
+            <label>Ikona:</label>
+            <input type="text" id="iconNameInput" value="sock_puppet_blue">
+        </div>
+    </div>
+
+    <div>
+        <label>Access Code (Pokój):</label>
+        <input type="text" id="accessCodeInput" placeholder="np. aBcD12">
+    </div>
+    <div class="row">
+        <button onclick="connectSocket()">Połącz (Gatekeeper -> WS)</button>
+        <button class="danger" onclick="disconnectSocket()">Rozłącz</button>
+    </div>
+    <div id="socketStatus" style="color: #f38ba8; font-weight: bold;">Status: Rozłączony</div>
+
+    <hr style="border-color: #45475a; width: 100%;">
+    <h3>Wyślij Eventy</h3>
+
+    <div class="row">
+        <input type="text" id="chatMsg" placeholder="Wiadomość czatu">
+        <button onclick="sendChatMessage()">Wyślij Chat</button>
+    </div>
+
+    <div style="background: #181825; padding: 10px; border-radius: 4px; margin-top: 10px;">
+        <label>Game Specific Event</label>
+        <input type="text" id="gseEventName" value="start_game" style="margin-bottom: 5px;">
+        <textarea id="gsePayload" rows="2">{"rounds": 3}</textarea>
+        <button onclick="sendGameSpecificEvent()" style="margin-top: 5px; width: 100%;">Wyślij Event Gry</button>
+    </div>
+
+    <div style="background: #181825; padding: 10px; border-radius: 4px; margin-top: 10px;">
+        <label>Wgraj Słownik (.txt)</label>
+        <input type="file" id="fileInput" style="margin-bottom: 5px;">
+        <button onclick="sendFile()" style="width: 100%;">Upload Słownika</button>
+    </div>
+</div>
+
+<div class="panel" style="max-width: 250px;">
+    <h2>3. Podgląd plików</h2>
+    <div id="filePreview" class="icon-gallery">
+        <span style="color: #6c7086; font-size: 13px;">Kliknij "GET /icon/all" z lewej strony, aby załadować.</span>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>4. Logi z serwera</h2>
+    <div id="logs"></div>
+    <button class="danger" onclick="document.getElementById('logs').innerHTML = ''" style="align-self: flex-end; margin-top: 10px;">Wyczyść logi</button>
+</div>
+
+<script>
+    let socket = null;
+    const logsDiv = document.getElementById('logs');
+
+    function log(msg, type = 'msg', jsonData = null) {
+        const time = new Date().toLocaleTimeString();
+        let colorClass = 'log-msg';
+        if (type === 'err') colorClass = 'log-err';
+        else if (type === 'sys') colorClass = 'log-sys';
+        else if (type === 'chat') colorClass = 'log-chat';
+
+        let html = `<div class="log-entry">
+                <span class="log-time">[${time}]</span>
+                <span class="${colorClass}">${msg}</span>`;
+
+        if (jsonData) {
+            html += `<pre class="log-json">${JSON.stringify(jsonData, null, 2)}</pre>`;
+        }
+
+        html += `</div>`;
+        logsDiv.innerHTML += html;
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+    }
+
+    async function getGames() {
+        try {
+            const url = document.getElementById('restUrl').value;
+            const res = await fetch(`${url}/game/all`);
+            const data = await res.json();
+            log("Pobrano gry:", 'msg', data);
+        } catch (e) { log(`Błąd: ${e.message}`, 'err'); }
+    }
+
+    async function getIcons() {
+        try {
+            const url = document.getElementById('restUrl').value;
+            const res = await fetch(`${url}/user/icon/all`);
+            const data = await res.json();
+            log("Pobrano ikony:", 'msg', data);
+
+            const previewDiv = document.getElementById('filePreview');
+            previewDiv.innerHTML = '';
+            if (data.length === 0) return;
+
+            data.forEach(icon => {
+                const imgUrl = `${url}/${icon.path}`;
+                const card = document.createElement('div');
+                card.className = 'icon-card';
+                const img = document.createElement('img');
+                img.src = imgUrl;
+                img.alt = icon.name;
+                img.onerror = () => { img.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" fill="%23f38ba8" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M4.285 4.285a.5.5 0 0 0 0 .707L7.293 8l-3.008 3.008a.5.5 0 0 0 .707.707L8 8.707l3.008 3.008a.5.5 0 0 0 .707-.707L8.707 8l3.008-3.008a.5.5 0 0 0-.707-.707L8 7.293 4.992 4.285a.5.5 0 0 0-.707 0z"/></svg>'; };
+
+                const label = document.createElement('div');
+                label.className = 'icon-label';
+                label.innerText = icon.name;
+
+                card.appendChild(img);
+                card.appendChild(label);
+                previewDiv.appendChild(card);
+            });
+        } catch (e) { log(`Błąd pobierania ikon: ${e.message}`, 'err'); }
+    }
+
+    async function createSession() {
+        try {
+            const url = document.getElementById('restUrl').value;
+            const gameId = document.getElementById('gameIdInput').value;
+            const res = await fetch(`${url}/session/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ gameId: gameId })
+            });
+
+            if (res.ok) {
+                const accessCode = await res.text();
+                log(`Utworzono sesję! Kod: ${accessCode}`, 'sys');
+                document.getElementById('accessCodeInput').value = accessCode;
+            } else {
+                log(`Błąd tworzenia sesji: ${res.status}`, 'err');
+            }
+        } catch (e) { log(`Błąd: ${e.message}`, 'err'); }
+    }
+
+    async function connectSocket() {
+        if (socket) socket.disconnect();
+        const restUrl = document.getElementById('restUrl').value;
+        const socketUrl = document.getElementById('socketUrl').value;
+        const accessCode = document.getElementById('accessCodeInput').value;
+        const nickname = document.getElementById('nicknameInput').value;
+        const iconName = document.getElementById('iconNameInput').value;
+
+        if (!accessCode) return log("Brak accessCode! Wygeneruj sesję.", "err");
+        if (!nickname) return log("Brak Nickname!", "err");
+
+        // --- 1. REST API GATEKEEPER CHECK ---
+        log(`[REST] Pytam endpoint /check-join czy nick i pokój są prawidłowe...`);
+        try {
+            const checkRes = await fetch(`${restUrl}/session/check-join?accessCode=${accessCode}&nickname=${nickname}`);
+            if (!checkRes.ok) {
+                const errorText = await checkRes.text();
+                return log(`[ODMOWA] Serwer REST odrzucił połączenie (${checkRes.status}): ${errorText}`, 'err');
+            }
+            log(`[REST] Pozytywna weryfikacja. Otwieranie połączenia WebSocket...`, 'sys');
+        } catch(e) {
+            log(`[REST] Błąd sieciowy podczas zapytania check-join: ${e.message}`, 'err');
+            return;
+        }
+
+        // --- 2. SOCKET.IO CONNECTION ---
+        socket = io(socketUrl, {
+            query: { accessCode: accessCode, nickname: nickname, iconName: iconName },
+            transports: ["websocket"]
+        });
+
+        const statusLabel = document.getElementById('socketStatus');
+
+        socket.on("connect", () => {
+            statusLabel.innerText = `Status: Połączono`;
+            statusLabel.style.color = "#a6e3a1";
+            log("Socket.IO połączony pomyślnie!", "sys");
+        });
+
+        socket.on("disconnect", () => {
+            statusLabel.innerText = "Status: Rozłączony";
+            statusLabel.style.color = "#f38ba8";
+            log("Socket.IO rozłączony!", "err");
+        });
+
+        // Awaryjny błąd przy połączeniu (jeśli użyliście sposobu nr 1 w ConnectListener)
+        socket.on("join error", (data) => {
+            log(`[AWARYJNY ODRZUT Z WS] ${data.message}`, "err");
+        });
+
+        // GŁÓWNY ROUTER EVENTÓW Z SERWERA
+        socket.onAny((eventName, ...args) => {
+            if (args.length === 0) return log(`[EVENT: ${eventName}]`);
+            const data = args.length === 1 ? args[0] : args;
+
+            // Piękne formatowanie dla poszczególnych rodzajów payloadów:
+            if (eventName === "chat message") {
+                log(`[CZAT] ${data.nickname}: ${data.message}`, "chat", data);
+                return;
+            }
+
+            if (eventName === "server message") {
+                log(`[SYSTEM] ${data.message}`, "sys", data);
+                return;
+            }
+
+            // Reszta eventów z gry (game_started, turn_start, etc.)
+            log(`[EVENT: ${eventName}]`, "msg", data);
+        });
+    }
+
+    function disconnectSocket() {
+        if (socket) { socket.disconnect(); socket = null; }
+    }
+
+    function sendChatMessage() {
+        if (!socket || !socket.connected) return log("Nie jesteś połączony!", "err");
+        const msg = document.getElementById('chatMsg').value;
+        socket.emit("chat message", { message: msg }, (ack) => {
+            log(`[ACK] Wysłano chat, odpowiedź: ${ack}`, "sys");
+        });
+    }
+
+    function sendGameSpecificEvent() {
+        if (!socket || !socket.connected) return log("Nie jesteś połączony!", "err");
+        const eventName = document.getElementById('gseEventName').value;
+        let payload;
+        try {
+            payload = JSON.parse(document.getElementById('gsePayload').value);
+        } catch(e) { return log("Błąd parsowania JSON w payloadzie!", "err"); }
+
+        const wrapper = { eventName: eventName, data: payload };
+        log(`Wywołano GameSpecificEvent:`, "msg", wrapper);
+
+        socket.emit("game-specific-event", wrapper, (ack) => {
+            if(ack) log(`[ACK] Otrzymano od serwera:`, "sys", ack);
+        });
+    }
+
+    function sendFile() {
+        const fileInput = document.getElementById('fileInput');
+        const file = fileInput.files[0];
+
+        if (!file) return log("Wybierz plik z komputera!", "err");
+        if (!socket || !socket.connected) return log("Nie jesteś połączony!", "err");
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const arrayBuffer = e.target.result;
+            log(`Wgrywanie słownika: ${file.name} (${arrayBuffer.byteLength} bajtów)`, "sys");
+
+            // Używamy zaktualizowanej nazwy z nowego backendu ("dictionary upload")
+            socket.emit("dictionary upload", {
+                filename: file.name,
+                data: arrayBuffer
+            }, (ack) => {
+                log(`[ACK] Odpowiedź serwera: ${ack}`, "sys");
+            });
+        };
+        reader.readAsArrayBuffer(file);
+    }
+</script>
+</body>
+</html>

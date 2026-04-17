@@ -17,7 +17,7 @@ class UserServiceTest {
     fun `should register and retrieve user successfully`() {
         // given
         val userId = UUID.randomUUID()
-        val user = User(userId, "ROOM123")
+        val user = User(userId, "ROOM123", "Gracz 1", "default")
 
         // when
         userService.registerUser(userId, user)
@@ -38,7 +38,7 @@ class UserServiceTest {
     @Test
     fun `should remove user successfully`() {
         val userId = UUID.randomUUID()
-        userService.registerUser(userId, User(userId, "ROOM123"))
+        userService.registerUser(userId, User(userId, "ROOM123", "Gracz 1", "default"))
 
         userService.removeUser(userId)
 

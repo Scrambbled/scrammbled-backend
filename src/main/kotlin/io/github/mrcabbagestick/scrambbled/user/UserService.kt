@@ -31,4 +31,10 @@ class UserService {
     data class UserIcon(val name: String) {
         val path: String = "static/user_icons/$name.png"
     }
+
+    fun isNicknameTaken(accessCode: String, nickname: String): Boolean {
+        return users.values.any {
+            it.accessCode == accessCode && it.nickname == nickname
+        }
+    }
 }

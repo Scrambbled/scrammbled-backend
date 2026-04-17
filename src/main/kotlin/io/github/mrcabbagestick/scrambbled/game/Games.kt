@@ -10,7 +10,7 @@ typealias GameSupplier = () -> GameTemplate
 enum class Games(val gameId: GameId, val gameSupplier: GameSupplier) {
     TEST_GAME("test_game", ::TestGame),
     RPS_GAME("rps_game", ::RpsGame),
-    WORDS_IN_WORDS("Words_in_words_game", ::WordsInWordsGame);
+    WORDS_IN_WORDS("words_in_words_game", ::WordsInWordsGame);
 
     fun toGameDTO() = GameDTO(gameId)
 
