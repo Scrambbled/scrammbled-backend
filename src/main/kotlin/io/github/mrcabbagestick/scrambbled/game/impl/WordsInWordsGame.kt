@@ -270,19 +270,9 @@ data class SubmitWordData @JsonCreator constructor(@JsonProperty("word") val wor
 data class StartGameData @JsonCreator constructor(
     @JsonProperty("rounds") val rounds: Int = 3,
     @JsonProperty("mode") val mode: String = "sentence" // Z frontu może przyjść "sentence" lub "random"
-data class PlayerPassedPayload(
-    val playerId: UUID
 )
 
-data class StartRoundPayload(
-    val round: Int
-)
-
-data class EndRoundPayload(
-    val winnerId: UUID?,
-    val scores: Map<UUID, Int>
-)
-
+data class StartRoundPayload(val round: Int)
 data class GameStartedPayload(val currentPool: String, val totalRounds: Int, val players: List<UUID>, val mode: String)
 data class TurnStartPayload(val activePlayerId: UUID, val currentRound: Int, val currentPool: String)
 data class WordResultPayload(val success: Boolean, val word: String, val pointsGained: Int, val message: String, val updatedScores: Map<UUID, Int>)
