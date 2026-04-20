@@ -70,7 +70,7 @@ class SocketIOConfig(
             ack.sendAckData("Message sent")
         }
 
-        server.addEventListener("all players", Any::class.java) { client, event, ack ->
+        server.addEventListener("all-players", Any::class.java) { client, event, ack ->
             val user = userService.getUser(client.sessionId) ?: return@addEventListener
             val session = sessionService.getSession(user.accessCode) ?: return@addEventListener
 
