@@ -29,12 +29,14 @@ abstract class GameTemplate(val game: Games) {
         handleEvent(event.eventName, data, user, accessCode, server, ack)
     }
 
-    fun getHost(accessCode: String, server: SocketIOServer) {
-        server.getRoomOperations(accessCode).sendEvent("host", HostPayload(host))
+    fun getHost(): HostPayload {
+        return HostPayload(host)
+//        server.getRoomOperations(accessCode).sendEvent("host", HostPayload(host))
     }
 
-    fun getPlayers(accessCode: String, server: SocketIOServer) {
-        server.getRoomOperations(accessCode).sendEvent("all_players", AllPlayersPayload(players))
+    fun getPlayers(): AllPlayersPayload {
+        return AllPlayersPayload(players)
+//        server.getRoomOperations(accessCode).sendEvent("all_players", AllPlayersPayload(players))
     }
 
     protected fun sendSysMsg(accessCode: String, server: SocketIOServer, msg: String) {

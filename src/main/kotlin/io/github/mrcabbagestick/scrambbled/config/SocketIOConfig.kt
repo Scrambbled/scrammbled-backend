@@ -70,18 +70,20 @@ class SocketIOConfig(
             ack.sendAckData("Message sent")
         }
 
-        server.addEventListener("all-players", Any::class.java) { client, _, _ ->
+        server.addEventListener("all-players", Any::class.java) { client, _, ack ->
             val user = userService.getUser(client.sessionId) ?: return@addEventListener
             val session = sessionService.getSession(user.accessCode) ?: return@addEventListener
 
-            session.game.getPlayers(user.accessCode, server);
+            ack.sendAckData(session.game.getPlayers())
+//            session.game.getPlayers(user.accessCode, server);
         }
 
-        server.addEventListener("get-host", Any::class.java) { client, _, _ ->
+        server.addEventListener("get-host", Any::class.java) { client, _, ack ->
             val user = userService.getUser(client.sessionId) ?: return@addEventListener
             val session = sessionService.getSession(user.accessCode) ?: return@addEventListener
 
-            session.game.getHost(user.accessCode, server);
+            ack.sendAckData(session.game.getHost())
+//            session.game.getHost(user.accessCode, server);
         }
 
         server.addEventListener("user-data", UserData::class.java) { client, _, _ ->
