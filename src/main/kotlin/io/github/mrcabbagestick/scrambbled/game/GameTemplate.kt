@@ -31,12 +31,10 @@ abstract class GameTemplate(val game: Games) {
 
     fun getHost(): HostPayload {
         return HostPayload(host)
-//        server.getRoomOperations(accessCode).sendEvent("host", HostPayload(host))
     }
 
     fun getPlayers(): AllPlayersPayload {
         return AllPlayersPayload(players)
-//        server.getRoomOperations(accessCode).sendEvent("all_players", AllPlayersPayload(players))
     }
 
     protected fun sendSysMsg(accessCode: String, server: SocketIOServer, msg: String) {
@@ -52,6 +50,7 @@ abstract class GameTemplate(val game: Games) {
         val host: User?
     )
 
-    //TODO: not game specific events: getGameState, getPlayers, CHAT
+//    TODO: not game specific events: getGameState, CHAT
+//    TODO: broadcast, sendToUser/-s
 
 }
