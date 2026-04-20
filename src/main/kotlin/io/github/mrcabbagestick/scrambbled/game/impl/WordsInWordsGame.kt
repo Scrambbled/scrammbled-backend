@@ -64,6 +64,8 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
 
     override fun onUserJoin(user: User, accessCode: String, server: SocketIOServer) {
 //        nicknames[user.userId] = user.nickname
+        if (players.isEmpty() || host == null)
+            host = user
 
         if (!isGameStarted && !players.contains(user)) {
             players.add(user)
@@ -78,8 +80,12 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
     }
 
     override fun onUserLeft(user: User, accessCode: String, server: SocketIOServer) {
+
         val wasActiveTurn = isGameStarted && players.isNotEmpty() && players[currentPlayerIndex] == user
         players.remove(user)
+
+        if (user == host)
+            host = players.first()
 
         sendSysMsg(accessCode, server, "Gracz ${user.nickname} opuścił grę.")
 
@@ -104,14 +110,17 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
 
     override fun <T> handleEvent(eventName: String, eventData: T, user: User, accessCode: String, server: SocketIOServer, ack: AckRequest) {
         when (eventName) {
-            "start_game" -> handleStartGame(eventData as StartGameData, accessCode, server)
+            "start_game" -> handleStartGame(eventData as StartGameData, accessCode, server, user)
             "submit_word" -> handleSubmitWord((eventData as SubmitWordData).word, user, accessCode, server)
             "pass" -> handlePass(user, accessCode, server)
-            "start_round" -> handleStartRound(accessCode, server)
+            "start_round" -> handleStartRound(accessCode, server, user)
         }
     }
 
-    private fun handleStartGame(data: StartGameData, accessCode: String, server: SocketIOServer) {
+    private fun handleStartGame(data: StartGameData, accessCode: String, server: SocketIOServer, user: User) {
+        if (user != host)
+            return
+
         if (isGameStarted || players.isEmpty()) return
         isGameStarted = true
 
@@ -196,7 +205,10 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
         advanceTurn(accessCode, server)
     }
 
-    private fun handleStartRound(accessCode: String, server: SocketIOServer) {
+    private fun handleStartRound(accessCode: String, server: SocketIOServer, user: User) {
+        if (user != host)
+            return
+
         if (!betweenRounds) return
         betweenRounds = false
 

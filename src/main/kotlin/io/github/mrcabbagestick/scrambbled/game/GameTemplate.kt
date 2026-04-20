@@ -4,13 +4,13 @@ import com.corundumstudio.socketio.AckRequest
 import com.corundumstudio.socketio.SocketIOServer
 import com.fasterxml.jackson.databind.ObjectMapper
 import io.github.mrcabbagestick.scrambbled.config.ServerMessagePayload
-import io.github.mrcabbagestick.scrambbled.game.impl.StartRoundPayload
 import io.github.mrcabbagestick.scrambbled.socket.event.GameSpecificEvent
 import io.github.mrcabbagestick.scrambbled.user.User
 import io.github.mrcabbagestick.tools.catchToNull
 
 abstract class GameTemplate(val game: Games) {
     protected val players = mutableListOf<User>();
+    protected var host: User? = null;
 
     abstract fun onUserJoin(user: User, accessCode: String, server: SocketIOServer)
     abstract fun onUserLeft(user: User, accessCode: String, server: SocketIOServer)
@@ -29,7 +29,11 @@ abstract class GameTemplate(val game: Games) {
         handleEvent(event.eventName, data, user, accessCode, server, ack)
     }
 
-    public fun getPlayers(accessCode: String, server: SocketIOServer) {
+    fun getHost(accessCode: String, server: SocketIOServer) {
+        server.getRoomOperations(accessCode).sendEvent("host", HostPayload(host))
+    }
+
+    fun getPlayers(accessCode: String, server: SocketIOServer) {
         server.getRoomOperations(accessCode).sendEvent("all_players", AllPlayersPayload(players))
     }
 
@@ -37,8 +41,13 @@ abstract class GameTemplate(val game: Games) {
         server.getRoomOperations(accessCode).sendEvent("server message", ServerMessagePayload(msg))
     }
 
+
+//    --- DTO ---
     data class AllPlayersPayload(
         val players: List<User>
+    )
+    data class HostPayload(
+        val host: User?
     )
 
     //TODO: not game specific events: getGameState, getPlayers, CHAT

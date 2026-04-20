@@ -56,7 +56,7 @@ class SocketIOConfig(
             session.game.handleEvent(event, user, user.accessCode, server, ack)
         }
 
-        server.addEventListener("chat message", MessageEvent::class.java) { client, event, ack ->
+        server.addEventListener("chat-message", MessageEvent::class.java) { client, event, ack ->
             val user = userService.getUser(client.sessionId) ?: return@addEventListener
 
             val payload = ChatBroadcastPayload(
@@ -70,18 +70,25 @@ class SocketIOConfig(
             ack.sendAckData("Message sent")
         }
 
-        server.addEventListener("all-players", Any::class.java) { client, event, ack ->
+        server.addEventListener("all-players", Any::class.java) { client, _, _ ->
             val user = userService.getUser(client.sessionId) ?: return@addEventListener
             val session = sessionService.getSession(user.accessCode) ?: return@addEventListener
 
             session.game.getPlayers(user.accessCode, server);
         }
 
-        server.addEventListener("user data", UserData::class.java) { client, _, _ ->
-            client.sendEvent("user data", "SessionId: ${client.sessionId}\nAddress: ${client.remoteAddress}")
+        server.addEventListener("get-host", Any::class.java) { client, _, _ ->
+            val user = userService.getUser(client.sessionId) ?: return@addEventListener
+            val session = sessionService.getSession(user.accessCode) ?: return@addEventListener
+
+            session.game.getHost(user.accessCode, server);
         }
 
-        server.addEventListener("dictionary upload", FileUploadEvent::class.java) { client, event, ack ->
+        server.addEventListener("user-data", UserData::class.java) { client, _, _ ->
+            client.sendEvent("user-data", "SessionId: ${client.sessionId}\nAddress: ${client.remoteAddress}")
+        }
+
+        server.addEventListener("dictionary-upload", FileUploadEvent::class.java) { client, event, ack ->
             val user = userService.getUser(client.sessionId) ?: run {
                 ack.sendAckData("You are not connected to any session")
                 return@addEventListener
