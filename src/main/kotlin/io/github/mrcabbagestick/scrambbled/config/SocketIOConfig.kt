@@ -70,6 +70,13 @@ class SocketIOConfig(
             ack.sendAckData("Message sent")
         }
 
+        server.addEventListener("all players", Any::class.java) { client, event, ack ->
+            val user = userService.getUser(client.sessionId) ?: return@addEventListener
+            val session = sessionService.getSession(user.accessCode) ?: return@addEventListener
+
+            session.game.getPlayers(user.accessCode, server);
+        }
+
         server.addEventListener("user data", UserData::class.java) { client, _, _ ->
             client.sendEvent("user data", "SessionId: ${client.sessionId}\nAddress: ${client.remoteAddress}")
         }
