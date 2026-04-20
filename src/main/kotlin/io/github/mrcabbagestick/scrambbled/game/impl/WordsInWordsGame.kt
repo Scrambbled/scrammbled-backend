@@ -14,8 +14,8 @@ import java.util.UUID
 
 class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
 
-    private val players = mutableListOf<UUID>()
-    private val nicknames = mutableMapOf<UUID, String>()
+//    private val players = mutableListOf<UUID>()
+//    private val nicknames = mutableMapOf<UUID, String>()
 
     private val roundScores = mutableMapOf<UUID, Int>()
     private val gameScores = mutableMapOf<UUID, Int>()
@@ -44,10 +44,6 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
         "Dolphin has problems", "Computer calculates slowly"
     )
 
-    private fun sendSysMsg(accessCode: String, server: SocketIOServer, msg: String) {
-        server.getRoomOperations(accessCode).sendEvent("server message", ServerMessagePayload(msg))
-    }
-
     // Prosty generator upewniający się, że w puli są samogłoski i spółgłoski
     private fun generateRandomLetters(): String {
         val vowels = listOf('A', 'E', 'I', 'O', 'U', 'Y')
@@ -67,10 +63,10 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
     }
 
     override fun onUserJoin(user: User, accessCode: String, server: SocketIOServer) {
-        nicknames[user.userId] = user.nickname
+//        nicknames[user.userId] = user.nickname
 
-        if (!isGameStarted && !players.contains(user.userId)) {
-            players.add(user.userId)
+        if (!isGameStarted && !players.contains(user)) {
+            players.add(user)
             sendSysMsg(accessCode, server, "Gracz ${user.nickname} dołączył (Gracz ${players.size}).")
         } else {
             sendSysMsg(accessCode, server, "Gracz ${user.nickname} dołączył jako Obserwator.")
