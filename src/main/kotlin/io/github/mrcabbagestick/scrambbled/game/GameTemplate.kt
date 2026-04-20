@@ -30,7 +30,7 @@ abstract class GameTemplate(val game: Games) {
     }
 
     public fun getPlayers(accessCode: String, server: SocketIOServer) {
-        server.getRoomOperations(accessCode).sendEvent("new_round", AllPlayersPayload(players))
+        server.getRoomOperations(accessCode).sendEvent("all_players", AllPlayersPayload(players))
     }
 
     protected fun sendSysMsg(accessCode: String, server: SocketIOServer, msg: String) {
