@@ -18,8 +18,6 @@ abstract class GameTemplate(val game: Games) {
     abstract fun <T> handleEvent(eventName: String, eventData: T, user: User, accessCode: String, server: SocketIOServer, ack: AckRequest)
     public open fun shouldTerminate(): Boolean = true
 
-    fun
-
     fun handleEvent(event: GameSpecificEvent<*>, user: User, accessCode: String, server: SocketIOServer, ack: AckRequest) {
         val eventType = getTypeForEventName(event.eventName)
             ?: return System.err.println("Event name '${event.eventName}' has no corresponding type in game: '${game.gameId}'")
@@ -34,5 +32,7 @@ abstract class GameTemplate(val game: Games) {
     protected fun sendSysMsg(accessCode: String, server: SocketIOServer, msg: String) {
         server.getRoomOperations(accessCode).sendEvent("server message", ServerMessagePayload(msg))
     }
+
+    //TODO: not game specific events: getGameState, getPlayers, CHAT
 
 }

@@ -79,7 +79,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
 
     override fun onUserLeft(user: User, accessCode: String, server: SocketIOServer) {
         val wasActiveTurn = isGameStarted && players.isNotEmpty() && players[currentPlayerIndex] == user.userId
-        players.remove(user.userId)
+        players.remove(user)
 
         sendSysMsg(accessCode, server, "Gracz ${user.nickname} opuścił grę.")
 
