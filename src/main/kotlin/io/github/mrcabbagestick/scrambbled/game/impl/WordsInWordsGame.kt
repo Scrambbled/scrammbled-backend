@@ -71,14 +71,14 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
         } else {
             sendSysMsg(accessCode, server, "Gracz ${user.nickname} dołączył jako Obserwator.")
             if (isGameStarted) {
-                val payload = GameSyncPayload(currentPool, currentRound, maxRounds, players[currentPlayerIndex], roundScores, gameScores)
+                val payload = GameSyncPayload(currentPool, currentRound, maxRounds, players[currentPlayerIndex].userId, roundScores, gameScores)
                 server.getClient(user.userId)?.sendEvent("game_sync", payload)
             }
         }
     }
 
     override fun onUserLeft(user: User, accessCode: String, server: SocketIOServer) {
-        val wasActiveTurn = isGameStarted && players.isNotEmpty() && players[currentPlayerIndex] == user.userId
+        val wasActiveTurn = isGameStarted && players.isNotEmpty() && players[currentPlayerIndex] == user
         players.remove(user)
 
         sendSysMsg(accessCode, server, "Gracz ${user.nickname} opuścił grę.")
@@ -124,14 +124,14 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
         usedWords.clear()
 
         players.forEach {
-            gameScores[it] = 0
-            roundScores[it] = 0
+            gameScores[it.userId] = 0
+            roundScores[it.userId] = 0
         }
         players.shuffle()
 
         refreshPool() // Ustawia zdanie lub losowe litery w zależności od trybu
 
-        val payload = GameStartedPayload(currentPool, maxRounds, players, gameMode)
+        val payload = GameStartedPayload(currentPool, maxRounds, players.map{it.userId}, gameMode)
         server.getRoomOperations(accessCode).sendEvent("game_started", payload)
         sendSysMsg(accessCode, server, "Gra wystartowała! Tryb: ${if(gameMode == "random") "Losowe Litery" else "Zdania"}.")
         server.getRoomOperations(accessCode).sendEvent("new_round", StartRoundPayload(currentRound))
@@ -140,13 +140,13 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
     }
 
     private fun broadcastTurnStart(accessCode: String, server: SocketIOServer) {
-        val activePlayerId = players[currentPlayerIndex]
+        val activePlayerId = players[currentPlayerIndex].userId
         val payload = TurnStartPayload(activePlayerId, currentRound, currentPool)
         server.getRoomOperations(accessCode).sendEvent("turn_start", payload)
     }
 
     private fun handleSubmitWord(word: String, user: User, accessCode: String, server: SocketIOServer) {
-        if (!isGameStarted || players[currentPlayerIndex] != user.userId) return
+        if (!isGameStarted || players[currentPlayerIndex] != user) return
         if (betweenRounds) return
 
         val upperWord = word.trim().uppercase()
@@ -185,7 +185,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
     }
 
     private fun handlePass(user: User, accessCode: String, server: SocketIOServer) {
-        if (!isGameStarted || players.isEmpty() || players[currentPlayerIndex] != user.userId) return
+        if (!isGameStarted || players.isEmpty() || players[currentPlayerIndex] != user) return
         if (betweenRounds) return
 
         val payload = PlayerPassedPayload(user.userId)
@@ -221,7 +221,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
         if (roundWinnerId != null && (roundScores[roundWinnerId] ?: 0) > 0) {
             gameScores[roundWinnerId] = (gameScores[roundWinnerId] ?: 0) + 1
             server.getRoomOperations(accessCode).sendEvent("round_end", EndRoundPayload(roundWinnerId, roundScores))
-            sendSysMsg(accessCode, server, "Rundę wygrywa ${nicknames[roundWinnerId]}!")
+            sendSysMsg(accessCode, server, "Rundę wygrywa ${players.find { it.userId == roundWinnerId }?.nickname}!")
         } else {
             server.getRoomOperations(accessCode).sendEvent("round_end", EndRoundPayload(null, roundScores))
             sendSysMsg(accessCode, server, "Nikt nie zdobył punktów w tej rundzie.")
@@ -231,7 +231,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
             val gameWinnerId = gameScores.maxByOrNull { it.value }?.key
             val payload = GameOverPayload(gameWinnerId, gameScores)
             server.getRoomOperations(accessCode).sendEvent("game_over", payload)
-            sendSysMsg(accessCode, server, "Koniec gry! Zwycięzca: ${nicknames[gameWinnerId] ?: "Brak"}")
+            sendSysMsg(accessCode, server, "Koniec gry! Zwycięzca: ${players.find { it.userId == roundWinnerId }?.nickname}")
             isGameStarted = false
         } else {
             betweenRounds = true
@@ -240,10 +240,10 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
             refreshPool() // Losujemy nową pulę/zdanie
             usedWords.clear()
 
-            players.sortBy { gameScores[it] ?: 0 }
+            players.sortBy { gameScores[it.userId] ?: 0 }
             currentPlayerIndex = 0
 
-            players.forEach { roundScores[it] = 0 }
+            players.forEach { roundScores[it.userId] = 0 }
 
             sendSysMsg(accessCode, server, "--- RUNDA $currentRound ---")
             broadcastTurnStart(accessCode, server)

@@ -9,12 +9,12 @@ import io.github.mrcabbagestick.scrambbled.user.User
 import java.util.UUID
 
 class RpsGame : GameTemplate(Games.RPS_GAME) {
-    private val players = mutableListOf<UUID>()
+//    private val players = mutableListOf<UUID>()
     private val choices = mutableMapOf<UUID, String>()
 
     override fun onUserJoin(user: User, accessCode: String, server: SocketIOServer) {
-        if(players.size < 2 && !players.contains(user.userId)) {
-            players.add(user.userId)
+        if(players.size < 2 && !players.contains(user)) {
+            players.add(user)
             server.getRoomOperations(accessCode).sendEvent("chat message", "Gracz ${user.userId.toString().substring(0,5)} dołączył jako Gracz ${players.size}.")
         } else {
             server.getRoomOperations(accessCode).sendEvent("chat message", "Gracz ${user.userId.toString().substring(0,5)} dołączył jako Obserwator.")
@@ -26,7 +26,7 @@ class RpsGame : GameTemplate(Games.RPS_GAME) {
     }
 
     override fun onUserLeft(user: User, accessCode: String, server: SocketIOServer) {
-        players.remove(user.userId)
+        players.remove(user)
         choices.remove(user.userId)
         server.getRoomOperations(accessCode).sendEvent("chat message", "Gracz opuścił grę. Czekamy na przeciwnika...")
     }
@@ -41,7 +41,7 @@ class RpsGame : GameTemplate(Games.RPS_GAME) {
             val moveEvent = eventData as RpsMoveEvent
             val move = moveEvent.choice.uppercase()
 
-            if(!players.contains(user.userId)) {
+            if(!players.contains(user)) {
                 ack.sendAckData("Nie jesteś graczem, możesz tylko obserwować!")
                 return
             }
@@ -62,8 +62,8 @@ class RpsGame : GameTemplate(Games.RPS_GAME) {
             if(choices.size == 2) {
                 val p1Id = players[0]
                 val p2Id = players[1]
-                val p1Move = choices[p1Id]!!
-                val p2Move = choices[p2Id]!!
+                val p1Move = choices[p1Id.userId]!!
+                val p2Move = choices[p2Id.userId]!!
 
                 val result = resolveWinner(p1Move, p2Move)
                 val finalMessage = """
