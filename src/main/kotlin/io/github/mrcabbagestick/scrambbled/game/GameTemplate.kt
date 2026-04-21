@@ -2,8 +2,8 @@ package io.github.mrcabbagestick.scrambbled.game
 
 import com.corundumstudio.socketio.AckRequest
 import com.corundumstudio.socketio.SocketIOServer
+import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.ObjectMapper
-import io.github.mrcabbagestick.scrambbled.config.ServerMessagePayload
 import io.github.mrcabbagestick.scrambbled.socket.event.GameSpecificEvent
 import io.github.mrcabbagestick.scrambbled.user.User
 import io.github.mrcabbagestick.tools.catchToNull
@@ -37,8 +37,24 @@ abstract class GameTemplate(val game: Games) {
         return AllPlayersPayload(players)
     }
 
-    protected fun sendSysMsg(accessCode: String, server: SocketIOServer, msg: String) {
-        server.getRoomOperations(accessCode).sendEvent("server message", ServerMessagePayload(msg))
+    protected fun broadcastEvent(accessCode: String, server: SocketIOServer, eventName: String, payload: Any) {
+        server.getRoomOperations(accessCode).sendEvent(eventName, payload)
+    }
+
+    protected fun sendToUser(user: User, server: SocketIOServer, eventName: String, payload: Any) {
+        server.getClient(user.userId)?.sendEvent(eventName, payload)
+    }
+
+    protected fun sendToGroup(users: Collection<User>, server: SocketIOServer, eventName: String, payload: Any) {
+        users.forEach { server.getClient(it.userId)?.sendEvent(eventName, payload) }
+    }
+
+    public fun sendSysMsg(accessCode: String, server: SocketIOServer, msg: String) {
+        broadcastEvent(accessCode, server, "server-message", ServerMessagePayload(msg))
+    }
+
+    public fun sendChat(accessCode: String, server: SocketIOServer, user: User,  msg: String) {
+        broadcastEvent(accessCode, server, "chat-message", ChatBroadcastPayload(user, msg))
     }
 
 
@@ -48,6 +64,17 @@ abstract class GameTemplate(val game: Games) {
     )
     data class HostPayload(
         val host: User?
+    )
+
+    data class ChatBroadcastPayload(
+        @JsonProperty("sender") val sender: User,
+        @JsonProperty("message") val message: String,
+        @JsonProperty("timestamp") val timestamp: Long = System.currentTimeMillis()
+    )
+
+    data class ServerMessagePayload(
+    @JsonProperty("message") val message: String,
+    @JsonProperty("timestamp") val timestamp: Long = System.currentTimeMillis()
     )
 
 //    TODO: not game specific events: getGameState, CHAT

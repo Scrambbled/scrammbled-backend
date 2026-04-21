@@ -58,15 +58,10 @@ class SocketIOConfig(
 
         server.addEventListener("chat-message", MessageEvent::class.java) { client, event, ack ->
             val user = userService.getUser(client.sessionId) ?: return@addEventListener
+            val session = sessionService.getSession(user.accessCode) ?: return@addEventListener
 
-            val payload = ChatBroadcastPayload(
-                sender = user.userId,
-                nickname = user.nickname,
-                icon = user.icon,
-                message = event.message
-            )
+            session.game.sendChat(user.accessCode, server, user, event.message)
 
-            server.getRoomOperations(user.accessCode).sendEvent("chat message", payload)
             ack.sendAckData("Message sent")
         }
 
@@ -75,7 +70,6 @@ class SocketIOConfig(
             val session = sessionService.getSession(user.accessCode) ?: return@addEventListener
 
             ack.sendAckData(session.game.getPlayers())
-//            session.game.getPlayers(user.accessCode, server);
         }
 
         server.addEventListener("get-host", Any::class.java) { client, _, ack ->
@@ -83,7 +77,6 @@ class SocketIOConfig(
             val session = sessionService.getSession(user.accessCode) ?: return@addEventListener
 
             ack.sendAckData(session.game.getHost())
-//            session.game.getHost(user.accessCode, server);
         }
 
         server.addEventListener("user-data", UserData::class.java) { client, _, _ ->
@@ -107,9 +100,8 @@ class SocketIOConfig(
             if(session.game is DictionaryAware) {
                 session.game.setDictionary(customDict)
             }
+            session.game.sendSysMsg(user.accessCode, server, "Host uploaded a custom dictionary: ${event.filename} (${customDict.wordCount} słów).")
 
-            val sysMsg = ServerMessagePayload("Host uploaded a custom dictionary: ${event.filename} (${customDict.wordCount} słów).")
-            server.getRoomOperations(session.accessCode).sendEvent("server message", sysMsg)
             ack.sendAckData("Dictionary uploaded successfully")
         }
 
@@ -132,15 +124,10 @@ class FileUploadEvent(
     @JsonProperty("data") val data: ByteArray
 )
 
-data class ChatBroadcastPayload(
-    @JsonProperty("sender") val sender: UUID,
-    @JsonProperty("message") val message: String,
-    @JsonProperty("nickname") val nickname: String,
-    @JsonProperty("icon") val icon: String,
-    @JsonProperty("timestamp") val timestamp: Long = System.currentTimeMillis()
-)
-
-data class ServerMessagePayload(
-    @JsonProperty("message") val message: String,
-    @JsonProperty("timestamp") val timestamp: Long = System.currentTimeMillis()
-)
+//data class ChatBroadcastPayload(
+//    @JsonProperty("sender") val sender: UUID,
+//    @JsonProperty("message") val message: String,
+//    @JsonProperty("nickname") val nickname: String,
+//    @JsonProperty("icon") val icon: String,
+//    @JsonProperty("timestamp") val timestamp: Long = System.currentTimeMillis()
+//)
