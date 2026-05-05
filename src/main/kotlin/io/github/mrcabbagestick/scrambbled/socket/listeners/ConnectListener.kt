@@ -2,7 +2,7 @@ package io.github.mrcabbagestick.scrambbled.socket.listeners
 
 import com.corundumstudio.socketio.SocketIOClient
 import com.corundumstudio.socketio.listener.ConnectListener
-import io.github.mrcabbagestick.scrambbled.config.ServerMessagePayload
+import io.github.mrcabbagestick.scrambbled.game.GameTemplate
 import io.github.mrcabbagestick.scrambbled.session.SessionService
 import io.github.mrcabbagestick.scrambbled.user.User
 import io.github.mrcabbagestick.scrambbled.user.UserService
@@ -29,7 +29,7 @@ class SocketConnectListener(
         }
 
         if(userService.isNicknameTaken(accessCode, nickname)) {
-            val errorPayload = ServerMessagePayload("Nickname '${nickname}' is already taken")
+            val errorPayload = GameTemplate.ServerMessagePayload("Nickname '${nickname}' is already taken")
             client.sendEvent("join error", errorPayload)
 
             Timer().schedule(object : TimerTask() {
@@ -43,7 +43,7 @@ class SocketConnectListener(
 
         val session = sessionService.getSession(accessCode)
         if(session == null) {
-            client.sendEvent("join error", ServerMessagePayload("Room '$accessCode' does not exist."))
+            client.sendEvent("join error", GameTemplate.ServerMessagePayload("Room '$accessCode' does not exist."))
             Timer().schedule(object : TimerTask() { override fun run() { client.disconnect() } }, 100)
             return
         }

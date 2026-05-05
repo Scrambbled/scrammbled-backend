@@ -56,25 +56,34 @@ class SocketIOConfig(
             session.game.handleEvent(event, user, user.accessCode, server, ack)
         }
 
-        server.addEventListener("chat message", MessageEvent::class.java) { client, event, ack ->
+        server.addEventListener("chat-message", MessageEvent::class.java) { client, event, ack ->
             val user = userService.getUser(client.sessionId) ?: return@addEventListener
+            val session = sessionService.getSession(user.accessCode) ?: return@addEventListener
 
-            val payload = ChatBroadcastPayload(
-                sender = user.userId,
-                nickname = user.nickname,
-                icon = user.icon,
-                message = event.message
-            )
+            session.game.sendChat(user.accessCode, server, user, event.message)
 
-            server.getRoomOperations(user.accessCode).sendEvent("chat message", payload)
             ack.sendAckData("Message sent")
         }
 
-        server.addEventListener("user data", UserData::class.java) { client, _, _ ->
-            client.sendEvent("user data", "SessionId: ${client.sessionId}\nAddress: ${client.remoteAddress}")
+        server.addEventListener("all-players", Any::class.java) { client, _, ack ->
+            val user = userService.getUser(client.sessionId) ?: return@addEventListener
+            val session = sessionService.getSession(user.accessCode) ?: return@addEventListener
+
+            ack.sendAckData(session.game.getPlayers())
         }
 
-        server.addEventListener("dictionary upload", FileUploadEvent::class.java) { client, event, ack ->
+        server.addEventListener("get-host", Any::class.java) { client, _, ack ->
+            val user = userService.getUser(client.sessionId) ?: return@addEventListener
+            val session = sessionService.getSession(user.accessCode) ?: return@addEventListener
+
+            ack.sendAckData(session.game.getHost())
+        }
+
+        server.addEventListener("user-data", UserData::class.java) { client, _, _ ->
+            client.sendEvent("user-data", "SessionId: ${client.sessionId}\nAddress: ${client.remoteAddress}")
+        }
+
+        server.addEventListener("dictionary-upload", FileUploadEvent::class.java) { client, event, ack ->
             val user = userService.getUser(client.sessionId) ?: run {
                 ack.sendAckData("You are not connected to any session")
                 return@addEventListener
@@ -91,9 +100,8 @@ class SocketIOConfig(
             if(session.game is DictionaryAware) {
                 session.game.setDictionary(customDict)
             }
+            session.game.sendSysMsg(user.accessCode, server, "Host uploaded a custom dictionary: ${event.filename} (${customDict.wordCount} słów).")
 
-            val sysMsg = ServerMessagePayload("Host uploaded a custom dictionary: ${event.filename} (${customDict.wordCount} słów).")
-            server.getRoomOperations(session.accessCode).sendEvent("server message", sysMsg)
             ack.sendAckData("Dictionary uploaded successfully")
         }
 
@@ -116,15 +124,10 @@ class FileUploadEvent(
     @JsonProperty("data") val data: ByteArray
 )
 
-data class ChatBroadcastPayload(
-    @JsonProperty("sender") val sender: UUID,
-    @JsonProperty("message") val message: String,
-    @JsonProperty("nickname") val nickname: String,
-    @JsonProperty("icon") val icon: String,
-    @JsonProperty("timestamp") val timestamp: Long = System.currentTimeMillis()
-)
-
-data class ServerMessagePayload(
-    @JsonProperty("message") val message: String,
-    @JsonProperty("timestamp") val timestamp: Long = System.currentTimeMillis()
-)
+//data class ChatBroadcastPayload(
+//    @JsonProperty("sender") val sender: UUID,
+//    @JsonProperty("message") val message: String,
+//    @JsonProperty("nickname") val nickname: String,
+//    @JsonProperty("icon") val icon: String,
+//    @JsonProperty("timestamp") val timestamp: Long = System.currentTimeMillis()
+//)
