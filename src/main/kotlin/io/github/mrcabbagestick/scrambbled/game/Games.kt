@@ -1,7 +1,7 @@
 package io.github.mrcabbagestick.scrambbled.game
 
 import io.github.mrcabbagestick.scrambbled.game.impl.RpsGame
-import io.github.mrcabbagestick.scrambbled.game.impl.ScrabbleGame
+import io.github.mrcabbagestick.scrambbled.game.impl.scrabble.ScrabbleGame
 import io.github.mrcabbagestick.scrambbled.game.impl.TestGame
 import io.github.mrcabbagestick.scrambbled.game.impl.WordsInWordsGame
 

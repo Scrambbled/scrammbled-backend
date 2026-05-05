@@ -1,12 +1,11 @@
-package io.github.mrcabbagestick.scrambbled.game.impl
+package io.github.mrcabbagestick.scrambbled.game.impl.scrabble
 
 import com.corundumstudio.socketio.AckRequest
 import com.corundumstudio.socketio.SocketIOServer
-import com.fasterxml.jackson.annotation.JsonCreator
-import com.fasterxml.jackson.annotation.JsonProperty
 import io.github.mrcabbagestick.scrambbled.game.DictionaryAware
 import io.github.mrcabbagestick.scrambbled.game.GameTemplate
 import io.github.mrcabbagestick.scrambbled.game.Games
+import io.github.mrcabbagestick.scrambbled.game.impl.scrabble.PlacementValidator.validateMove
 import io.github.mrcabbagestick.scrambbled.tools.dictionary.WordDictionary
 import io.github.mrcabbagestick.scrambbled.user.User
 import java.util.UUID
@@ -22,8 +21,17 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
     private val letterPouch = mutableListOf<Char>()
     private val playerTrays = mutableMapOf<UUID, MutableList<Char>>()
 
+    // Wartości punktowe liter
+    private val letterValues = mapOf(
+        'A' to 1, 'B' to 3, 'C' to 2, 'D' to 2, 'E' to 1, 'F' to 5, 'G' to 3, 'H' to 3,
+        'I' to 1, 'J' to 3, 'K' to 2, 'L' to 2, 'M' to 2, 'N' to 1, 'O' to 1, 'P' to 2,
+        'R' to 1, 'S' to 1, 'T' to 2, 'U' to 3, 'W' to 1, 'Y' to 2, 'Z' to 1
+    )
+
+    private var activeSpecials = mapOf<Pair<Int, Int>, SpecialSquare>()
+
     // Plansza: 15x15, null -> puste pole
-    private val board = Array(15) { Array<Char?>(15) { null } }
+    val board = Array(15) { Array<Char?>(15) { null } }
     private var isFirstMove = true
 
     private var isGameStarted = false
@@ -56,10 +64,57 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
     }
 
     private fun generateBoardData(): BoardData {
-        // Standardowa plansza Scrabble 15x15. Start to (7,7)
         val specials = mutableListOf<SpecialSquare>()
-        // TODO: Tu ogarnąć jak ustalać koordynaty pól premiowych dla planszy (przykład na sztywno)
-        // np. specials.add(SpecialSquare(3, 1, 0, 0)) // Triple Word na rogu (x=0, y=0)
+
+        fun addSpecialSquares(coords: List<Pair<Int, Int>>, wordMult: Int, letterMult: Int) {
+            coords.forEach { (x, y) ->
+                specials.add(
+                    SpecialSquare(
+                        x = x,
+                        y = y,
+                        wordMultiplier = wordMult,
+                        letterMultiplier = letterMult
+                    )
+                )
+            }
+        }
+
+        // 1. Potrójna premia słowna - pola na krawędziach
+        addSpecialSquares(listOf(
+            0 to 0, 0 to 7, 0 to 14,
+            7 to 0,         7 to 14,
+            14 to 0, 14 to 7, 14 to 14
+        ), wordMult = 3, letterMult = 1)
+
+        // 2. Podwójna premia słowna - przekątne + środek
+        addSpecialSquares(listOf(
+            1 to 1, 2 to 2, 3 to 3, 4 to 4,
+            10 to 10, 11 to 11, 12 to 12, 13 to 13,
+            1 to 13, 2 to 12, 3 to 11, 4 to 10,
+            13 to 1, 12 to 2, 11 to 3, 10 to 4,
+            7 to 7 // Pole startowe tradycyjnie działa jak podwójna premia słowna
+        ), wordMult = 2, letterMult = 1)
+
+        // 3. Potrójna premia literowa
+        addSpecialSquares(listOf(
+            1 to 5, 1 to 9,
+            5 to 1, 5 to 5, 5 to 9, 5 to 13,
+            9 to 1, 9 to 5, 9 to 9, 9 to 13,
+            13 to 5, 13 to 9
+        ), wordMult = 1, letterMult = 3)
+
+        // 4. Podwójna premia literowa
+        addSpecialSquares(listOf(
+            0 to 3, 0 to 11,
+            2 to 6, 2 to 8,
+            3 to 0, 3 to 7, 3 to 14,
+            6 to 2, 6 to 6, 6 to 8, 6 to 12,
+            7 to 3, 7 to 11,
+            8 to 2, 8 to 6, 8 to 8, 8 to 12,
+            11 to 0, 11 to 7, 11 to 14,
+            12 to 6, 12 to 8,
+            14 to 3, 14 to 11
+        ), wordMult = 1, letterMult = 2)
 
         return BoardData(15, 15, Coordinates(7, 7), specials)
     }
@@ -104,6 +159,7 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
         "submit_move" -> SubmitMovePayload::class.java
         "swap_tiles" -> SwapTilesPayload::class.java
         "pass" -> Any::class.java
+        "check_word" -> CheckWordPayload::class.java
         else -> null
     }
 
@@ -113,6 +169,7 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
             "submit_move" -> handleSubmitMove(eventData as SubmitMovePayload, user, accessCode, server)
             "swap_tiles" -> handleSwapTiles(eventData as SwapTilesPayload, user, accessCode, server)
             "pass" -> handlePass(user, accessCode, server)
+            "check_word" -> handleCheckWord(eventData as CheckWordPayload, user, ack)
         }
     }
 
@@ -129,6 +186,7 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
         players.forEach { refillTray(it.userId) }
 
         val boardData = generateBoardData()
+
         val playerInfos = players.map { PlayerInfoDTO(it) }
 
         broadcastEvent(accessCode, server, "start_game", ScrabbleStartedPayload(boardData, playerInfos))
@@ -136,6 +194,34 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
 
         sendTrayUpdate(accessCode, server)
         broadcastTurnStart(accessCode, server)
+    }
+
+    private fun handleCheckWord(payload: CheckWordPayload, user: User, ack: AckRequest) {
+        // 1. Sprawdzenie, czy gra trwa
+        if (!isGameStarted) {
+            if (ack.isAckRequested) ack.sendAckData(CheckWordResponse("invalid_placement"))
+            return
+        }
+
+        // 2. Walidacja
+        val validationResult = validateMove(
+            board = this.board,
+            placedTiles = payload.placedTiles,
+            isFirstMove = this.isFirstMove,
+            dictionary = this.activeDictionary,
+            letterValues = this.letterValues,
+            specials = this.activeSpecials
+        )
+
+        // 4. Wysłanie odpowiedzi
+        val response = CheckWordResponse(
+            status = validationResult.status,
+            points = if (validationResult.isValid) validationResult.points else null
+        )
+
+        if (ack.isAckRequested) {
+            ack.sendAckData(response)
+        }
     }
 
     private fun broadcastTurnStart(accessCode: String, server: SocketIOServer) {
@@ -168,19 +254,21 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
             }
         }
 
-        // TODO: 2. LOGIKA WALIDACJI SCRABBLE (Do zaimplementowania)
-        // - Czy słowo jest w jednej linii?
-        // - Czy styka się z innymi (lub jest na środku jeśli isFirstMove)?
-        // - Czy słowa pobrane za pomocą `activeDictionary?.isValidWord(slowo)` istnieją?
+        // 2. LOGIKA WALIDACJI SCRABBLE
+        val validationResult = PlacementValidator.validateMove(
+            board = this.board,
+            placedTiles = move.placedTiles,
+            isFirstMove = this.isFirstMove,
+            dictionary = this.activeDictionary,
+            letterValues = this.letterValues,
+            specials = this.activeSpecials
+        )
 
-        val isValid = true // TODO: Podmienić na właściwy walidator
-        val pointsGained = 15 // TODO: Obliczyć punkty z uwzględnieniem BoardData i kafelków
-
-        if (isValid) {
+        if (validationResult.isValid) {
             // Aktualizacja stanu
             isFirstMove = false
             consecutivePasses = 0
-            scores[user.userId] = (scores[user.userId] ?: 0) + pointsGained
+            scores[user.userId] = (scores[user.userId] ?: 0) + validationResult.points
 
             // Zapis na planszę
             move.placedTiles.forEach { tile ->
@@ -194,16 +282,22 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
             sendTrayUpdate(accessCode, server) // Wysyłamy graczowi nowe kafelki
 
             // Rozsyłamy sukces do reszty
-            val successPayload = MoveResultPayload(user.userId, move.placedTiles, pointsGained, scores)
+            val successPayload = MoveResultPayload(user.userId, move.placedTiles, validationResult.points, scores)
             broadcastEvent(accessCode, server, "move_accepted", successPayload)
-//            server.getRoomOperations(accessCode).sendEvent("move_accepted", successPayload)
-            sendSysMsg(accessCode, server, "${user.nickname} ułożył słowo za $pointsGained pkt.")
+            sendSysMsg(accessCode, server, "${user.nickname} ułożył słowo za ${validationResult.points} pkt.")
 
             checkGameEndOrAdvanceTurn(accessCode, server)
         } else {
-            sendToUser(user, server, "move_error", "Niedozwolony ruch lub słowo nie istnieje!")
-//            server.getClient(user.userId)?.sendEvent("move_error", "Niedozwolony ruch lub słowo nie istnieje!")
+            // Wysłanie konkretnego błędu w oparciu o validationResult.status
+            val errorMessage = when (validationResult.status) {
+                "must_contain_starting_square" -> "Pierwsze słowo musi przechodzić przez środek planszy!"
+                "invalid_placement" -> "Niedozwolony układ kafelków!"
+                "bad" -> "Jedno lub więcej słów nie istnieje w słowniku!"
+                else -> "Niedozwolony ruch!"
+            }
+            sendToUser(user, server, "move_error", errorMessage)
         }
+
     }
 
     private fun handleSwapTiles(payload: SwapTilesPayload, user: User, accessCode: String, server: SocketIOServer) {
@@ -248,58 +342,3 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
         }
     }
 }
-
-// --- DTO ---
-
-data class PlayerInfoDTO(
-    val id: UUID,
-    val nickname: String,
-    val iconUrl: String // "/static/user_icons/sock_puppet_blue.png"???
-) {
-    constructor(user: User) : this(
-        id = user.userId,
-        nickname = user.nickname,
-        iconUrl = "/static/user_icons/${user.icon}.png"
-    )
-}
-
-// Plansza Daniela
-data class Coordinates(val x: Int, val y: Int)
-
-data class SpecialSquare(
-    val wordMultiplier: Int,
-    val letterMultiplier: Int,
-    val x: Int,
-    val y: Int
-)
-
-data class BoardData(
-    val width: Int,
-    val height: Int,
-    val startingSquare: Coordinates,
-    val specialSquares: List<SpecialSquare>
-)
-
-// --- PAYLOADY ---
-
-data class PlacedTile(val letter: Char, val x: Int, val y: Int)
-
-data class SubmitMovePayload @JsonCreator constructor(
-    @JsonProperty("placedTiles") val placedTiles: List<PlacedTile>
-)
-
-data class SwapTilesPayload @JsonCreator constructor(
-    @JsonProperty("lettersToSwap") val lettersToSwap: List<Char>
-)
-
-data class ScrabbleStartedPayload(
-    val boardData: BoardData,
-    val players: List<PlayerInfoDTO>
-)
-
-data class MoveResultPayload(
-    val playerId: UUID,
-    val newlyPlacedTiles: List<PlacedTile>,
-    val pointsGained: Int,
-    val updatedScores: Map<UUID, Int>
-)
