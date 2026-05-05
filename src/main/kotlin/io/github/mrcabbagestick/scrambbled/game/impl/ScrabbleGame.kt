@@ -4,7 +4,6 @@ import com.corundumstudio.socketio.AckRequest
 import com.corundumstudio.socketio.SocketIOServer
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
-import io.github.mrcabbagestick.scrambbled.config.ServerMessagePayload
 import io.github.mrcabbagestick.scrambbled.game.DictionaryAware
 import io.github.mrcabbagestick.scrambbled.game.GameTemplate
 import io.github.mrcabbagestick.scrambbled.game.Games
@@ -17,7 +16,6 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
     private var activeDictionary: WordDictionary? = null
 
     // --- STAN GRY ---
-    private val players = mutableListOf<User>()
     private val scores = mutableMapOf<UUID, Int>()
 
     // Woreczek z literami (Pouch) i tacki graczy (Trays)
@@ -32,12 +30,12 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
     private var currentPlayerIndex = 0
     private var consecutivePasses = 0
 
+    //==================================
+    //TODO: Przerobić co się da na ACK!!
+    //==================================
+
     override fun setDictionary(dictionary: WordDictionary?) {
         this.activeDictionary = dictionary
-    }
-
-    private fun sendSysMsg(accessCode: String, server: SocketIOServer, msg: String) {
-        server.getRoomOperations(accessCode).sendEvent("server message", ServerMessagePayload(msg))
     }
 
     // --- INITIALIZATION ---
@@ -76,7 +74,8 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
     private fun sendTrayUpdate(accessCode: String, server: SocketIOServer) {
         players.forEach { user ->
             val tray = playerTrays[user.userId] ?: emptyList()
-            server.getClient(user.userId)?.sendEvent("tray_update", mapOf("tray" to tray))
+            sendToUser(user, server, "tray_update", mapOf("tray" to tray))
+//            server.getClient(user.userId)?.sendEvent("tray_update", mapOf("tray" to tray))
         }
     }
 
@@ -132,7 +131,8 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
         val boardData = generateBoardData()
         val playerInfos = players.map { PlayerInfoDTO(it) }
 
-        server.getRoomOperations(accessCode).sendEvent("game_started", ScrabbleStartedPayload(boardData, playerInfos))
+        broadcastEvent(accessCode, server, "start_game", ScrabbleStartedPayload(boardData, playerInfos))
+//        server.getRoomOperations(accessCode).sendEvent("game_started", ScrabbleStartedPayload(boardData, playerInfos))
 
         sendTrayUpdate(accessCode, server)
         broadcastTurnStart(accessCode, server)
@@ -140,10 +140,14 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
 
     private fun broadcastTurnStart(accessCode: String, server: SocketIOServer) {
         val activeUserId = players[currentPlayerIndex].userId
-        server.getRoomOperations(accessCode).sendEvent("turn_start", mapOf(
+        broadcastEvent(accessCode, server, "turn_start", mapOf(
             "activePlayerId" to activeUserId,
             "lettersInPouch" to letterPouch.size
         ))
+//        server.getRoomOperations(accessCode).sendEvent("turn_start", mapOf(
+//            "activePlayerId" to activeUserId,
+//            "lettersInPouch" to letterPouch.size
+//        ))
     }
 
     // --- ACTIONS ---
@@ -158,7 +162,8 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
         val tempTray = tray.toMutableList()
         for (letter in usedLetters) {
             if (!tempTray.remove(letter)) {
-                server.getClient(user.userId)?.sendEvent("move_error", "Nie masz odpowiednich liter na tacce!")
+                sendToUser(user, server, "move_error", "Nie masz odpowiednich liter na tacce!")
+//                server.getClient(user.userId)?.sendEvent("move_error", "Nie masz odpowiednich liter na tacce!")
                 return
             }
         }
@@ -190,12 +195,14 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
 
             // Rozsyłamy sukces do reszty
             val successPayload = MoveResultPayload(user.userId, move.placedTiles, pointsGained, scores)
-            server.getRoomOperations(accessCode).sendEvent("move_accepted", successPayload)
+            broadcastEvent(accessCode, server, "move_accepted", successPayload)
+//            server.getRoomOperations(accessCode).sendEvent("move_accepted", successPayload)
             sendSysMsg(accessCode, server, "${user.nickname} ułożył słowo za $pointsGained pkt.")
 
             checkGameEndOrAdvanceTurn(accessCode, server)
         } else {
-            server.getClient(user.userId)?.sendEvent("move_error", "Niedozwolony ruch lub słowo nie istnieje!")
+            sendToUser(user, server, "move_error", "Niedozwolony ruch lub słowo nie istnieje!")
+//            server.getClient(user.userId)?.sendEvent("move_error", "Niedozwolony ruch lub słowo nie istnieje!")
         }
     }
 
@@ -231,7 +238,8 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
 
         if (consecutivePasses >= players.size * 2 || (isTrayEmpty && letterPouch.isEmpty())) {
             val winnerId = scores.maxByOrNull { it.value }?.key
-            server.getRoomOperations(accessCode).sendEvent("game_over", mapOf("winner" to winnerId, "finalScores" to scores))
+            broadcastEvent(accessCode, server, "game_over", mapOf("winner" to winnerId, "finalScores" to scores))
+//            server.getRoomOperations(accessCode).sendEvent("game_over", mapOf("winner" to winnerId, "finalScores" to scores))
             sendSysMsg(accessCode, server, "Gra zakończona! Wygrywa: ${players.find { it.userId == winnerId }?.nickname}")
             isGameStarted = false
         } else {
