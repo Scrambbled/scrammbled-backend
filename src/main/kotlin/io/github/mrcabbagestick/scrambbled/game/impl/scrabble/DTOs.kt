@@ -36,7 +36,11 @@ data class BoardData(
 
 // --- PAYLOADY ---
 
-data class PlacedTile(val letter: Char, val x: Int, val y: Int)
+data class PlacedTile(
+    @JsonProperty("letter") val letter: Char,
+    @JsonProperty("x") val x: Int,
+    @JsonProperty("y") val y: Int
+)
 
 data class SubmitMovePayload @JsonCreator constructor(
     @JsonProperty("placedTiles") val placedTiles: List<PlacedTile>
@@ -65,7 +69,7 @@ data class ValidationResult(
 )
 
 data class CheckWordPayload(
-    val placedTiles: List<PlacedTile> // Użyj swojej klasy PlacedTile
+    @JsonProperty("placedTiles") val placedTiles: List<PlacedTile>
 )
 
 data class CheckWordResponse(
