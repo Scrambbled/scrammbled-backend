@@ -73,10 +73,18 @@ data class CheckWordResponse(
     val points: Int? = null
 )
 
-// Dodaj klasy pomocnicze na górze pliku
 data class TileCoordinate(val x: Int, val y: Int, val letter: Char, val isNew: Boolean)
 
 data class ScoredWord(
     val word: String,
     val tiles: List<TileCoordinate>
+)
+
+data class Letter(
+    val letter: Char,
+    val value: Int
+)
+
+data class TrayUpdate(
+    val tray: List<Letter>
 )

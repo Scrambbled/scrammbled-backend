@@ -181,9 +181,7 @@ object PlacementValidator {
                     wordBaseScore += (baseLetterValue * letterMult)
 
                     // Jeśli nowa litera leży na Double Word lub Triple Word, mnożymy wartość TEGO konkretnego słowa
-                    if (wMult > 1) {
-                        wordMultiplier *= wMult
-                    }
+                    wordMultiplier *= wMult
                 } else {
                     wordBaseScore += baseLetterValue
                 }

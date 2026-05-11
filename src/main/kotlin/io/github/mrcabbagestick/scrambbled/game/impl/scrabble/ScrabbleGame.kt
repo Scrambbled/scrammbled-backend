@@ -50,7 +50,6 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
 
     private fun initializeLetterPouch() {
         letterPouch.clear()
-        // Prosty podział dla języka angielskiego (wersja uproszczona bez blanków)
         val distribution = mapOf(
             'A' to 9, 'B' to 2, 'C' to 2, 'D' to 4, 'E' to 12, 'F' to 2, 'G' to 3, 'H' to 2,
             'I' to 9, 'J' to 1, 'K' to 1, 'L' to 4, 'M' to 2, 'N' to 6, 'O' to 8, 'P' to 2,
@@ -128,8 +127,12 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
 
     private fun sendTrayUpdate(accessCode: String, server: SocketIOServer) {
         players.forEach { user ->
-            val tray = playerTrays[user.userId] ?: emptyList()
-            sendToUser(user, server, "tray_update", mapOf("tray" to tray))
+            val letters = playerTrays[user.userId] ?: emptyList()
+            val tray = letters.map { letter ->
+                Letter(letter, letterValues[letter] ?: 0)
+            }
+
+            sendToUser(user, server, "tray_update", TrayUpdate(tray))
 //            server.getClient(user.userId)?.sendEvent("tray_update", mapOf("tray" to tray))
         }
     }
