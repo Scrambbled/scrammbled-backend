@@ -86,7 +86,7 @@ data class ScoredWord(
 
 data class Letter(
     val letter: Char,
-    val value: Int
+    val points: Int
 )
 
 data class TrayUpdate(
