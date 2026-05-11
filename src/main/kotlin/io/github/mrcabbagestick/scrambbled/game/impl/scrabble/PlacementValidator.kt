@@ -34,6 +34,27 @@ object PlacementValidator {
             return ValidationResult(isValid = false, status = "invalid_placement", points = 0)
         }
 
+        // 3.5. Sprawdzenie ciągłości liter
+        val minX = placedTiles.minOf { it.x }
+        val maxX = placedTiles.maxOf { it.x }
+        val minY = placedTiles.minOf { it.y }
+        val maxY = placedTiles.maxOf { it.y }
+
+        val range = if (isHorizontal) minX..maxX else minY..maxY
+        val fixedCoord = if (isHorizontal) placedTiles.first().y else placedTiles.first().x
+
+        for (i in range) {
+            val currentX = if (isHorizontal) i else fixedCoord
+            val currentY = if (isHorizontal) fixedCoord else i
+
+            val isTileOnBoard = board[currentY][currentX] != null
+            val isTilePlaced = placedTiles.any { it.x == currentX && it.y == currentY }
+
+            if (!isTileOnBoard && !isTilePlaced) {
+                return ValidationResult(isValid = false, status = "invalid_placement", points = 0)
+            }
+        }
+
         // 4. Ekstrakcja wszystkich powstałych słów (głównego i krzyżujących się) z informacjami o koordynatach
         val formedWordsInfo = extractAllWords(board, placedTiles)
 
@@ -121,8 +142,8 @@ object PlacementValidator {
         startX: Int,
         startY: Int,
         horizontal: Boolean,
-        placedTiles: List<PlacedTile> // Dodany parametr, żeby sprawdzać flagę isNew
-    ): ScoredWord { // Zmieniony typ zwracany z String na ScoredWord
+        placedTiles: List<PlacedTile>
+    ): ScoredWord {
         var minPos = if (horizontal) startX else startY
         val fixedPos = if (horizontal) startY else startX
 
@@ -133,7 +154,7 @@ object PlacementValidator {
         }
 
         val sb = java.lang.StringBuilder()
-        val tiles = mutableListOf<TileCoordinate>() // Nowa lista na obiekty liter
+        val tiles = mutableListOf<TileCoordinate>()
         var currentPos = minPos
 
         while (currentPos < 15) {
@@ -141,7 +162,6 @@ object PlacementValidator {
             if (charAt == null) break
             sb.append(charAt)
 
-            // Zapisywanie precyzyjnych koordynatów dla aktualnie czytanej litery
             val x = if (horizontal) currentPos else fixedPos
             val y = if (horizontal) fixedPos else currentPos
             val isNew = placedTiles.any { it.x == x && it.y == y }
@@ -150,7 +170,7 @@ object PlacementValidator {
             currentPos++
         }
 
-        return ScoredWord(sb.toString(), tiles) // Zwracamy obiekt z ułożonym słowem i strukturą kafelków
+        return ScoredWord(sb.toString(), tiles)
     }
 
     private fun hasNeighbor(virtualBoard: Array<Array<Char?>>, x: Int, y: Int): Boolean {
@@ -168,7 +188,7 @@ object PlacementValidator {
 
         for (scoredWord in formedWords) {
             var wordBaseScore = 0
-            var wordMultiplier = 1 // Mnożnik resetuje się dla każdego odczytywanego słowa
+            var wordMultiplier = 1
 
             for (tile in scoredWord.tiles) {
                 val baseLetterValue = letterValues[tile.letter] ?: 0
@@ -180,14 +200,12 @@ object PlacementValidator {
 
                     wordBaseScore += (baseLetterValue * letterMult)
 
-                    // Jeśli nowa litera leży na Double Word lub Triple Word, mnożymy wartość TEGO konkretnego słowa
                     wordMultiplier *= wMult
                 } else {
                     wordBaseScore += baseLetterValue
                 }
             }
 
-            // Dodajemy punkty z tego słowa przemnożone przez ewentualne premie do łącznej puli tury
             totalScore += (wordBaseScore * wordMultiplier)
         }
 

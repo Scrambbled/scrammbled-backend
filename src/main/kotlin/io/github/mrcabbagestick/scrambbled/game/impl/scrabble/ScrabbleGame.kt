@@ -25,7 +25,7 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
     private val letterValues = mapOf(
         'A' to 1, 'B' to 3, 'C' to 2, 'D' to 2, 'E' to 1, 'F' to 5, 'G' to 3, 'H' to 3,
         'I' to 1, 'J' to 3, 'K' to 2, 'L' to 2, 'M' to 2, 'N' to 1, 'O' to 1, 'P' to 2,
-        'Q' to 8,  'R' to 1, 'S' to 1, 'T' to 2, 'U' to 3, 'V' to 4, 'W' to 1, 'X' to 8,
+        'Q' to 8, 'R' to 1, 'S' to 1, 'T' to 2, 'U' to 3, 'V' to 4, 'W' to 1, 'X' to 8,
         'Y' to 2, 'Z' to 1
     )
 
@@ -60,6 +60,7 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
         distribution.forEach { (letter, count) ->
             repeat(count) { letterPouch.add(letter) }
         }
+
         letterPouch.shuffle()
     }
 
