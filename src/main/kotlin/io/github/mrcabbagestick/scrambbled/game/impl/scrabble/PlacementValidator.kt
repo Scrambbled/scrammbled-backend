@@ -204,9 +204,14 @@ object PlacementValidator {
                 } else {
                     wordBaseScore += baseLetterValue
                 }
+
+                val special = specials[Pair(tile.x, tile.y)]
+                println("Letter: ${tile.letter} base: $baseLetterValue letMult: ${special?.letterMultiplier ?: 1}, wMult: ${special?.wordMultiplier ?: 1}")
             }
 
             totalScore += (wordBaseScore * wordMultiplier)
+
+            println("points: $totalScore, base: $wordBaseScore mult: $wordMultiplier")
         }
 
         return totalScore
