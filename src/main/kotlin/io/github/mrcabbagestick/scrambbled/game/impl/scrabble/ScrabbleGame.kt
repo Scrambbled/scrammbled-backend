@@ -2,6 +2,7 @@ package io.github.mrcabbagestick.scrambbled.game.impl.scrabble
 
 import com.corundumstudio.socketio.AckRequest
 import com.corundumstudio.socketio.SocketIOServer
+import com.fasterxml.jackson.databind.ObjectMapper
 import io.github.mrcabbagestick.scrambbled.game.DictionaryAware
 import io.github.mrcabbagestick.scrambbled.game.GameTemplate
 import io.github.mrcabbagestick.scrambbled.game.Games
@@ -12,25 +13,30 @@ import java.util.UUID
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
+/**
+ * @param dictionaryProvider Callback used by [handleConfigureGame] to load a built-in
+ *   dictionary by language code ("en", "pl", …).  Defaults to `{ null }` so that the
+ *   no-arg constructor reference `::ScrabbleGame` in [Games] still compiles; the real
+ *   provider is injected by [SessionService] at session-creation time.
+ */
+class ScrabbleGame(
+    private val dictionaryProvider: (String) -> WordDictionary? = { null }
+) : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
 
-    private var activeDictionary: WordDictionary? = null
+    private val objectMapper = ObjectMapper()
 
-    // --- CUSTOM CONFIG (set by SocketIOConfig before start_game) ---
+    // --- RUNTIME CONFIG (set via configure_game / upload_letter_values events) ---
 
-    /** Overrides [defaultLetterValues] when uploaded via JSON config file. */
+    private var activeDictionary: WordDictionary? = dictionaryProvider("en")
     private var customLetterValues: Map<Char, Int>? = null
-
-    /**
-     * Overrides [defaultLetterDistribution] when uploaded via JSON config file.
-     * Applied together with [gameLengthMultiplier] inside [initializeLetterPouch].
-     */
     private var customLetterDistribution: Map<Char, Int>? = null
 
     /**
-     * Scales every letter count in the distribution.
-     * 0.5 = short game, 1.0 = default, 1.5 = long, 2.0 = extended.
-     * Each resulting count is clamped to a minimum of 1.
+     * Scale factor applied to every letter count when filling the pouch.
+     *  0.5 → short game (~half the tiles)
+     *  1.0 → default (no change)
+     *  1.5 → long
+     *  2.0 → extended
      */
     private var gameLengthMultiplier: Double = 1.0
 
@@ -42,36 +48,13 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
     private val effectiveLetterDistribution: Map<Char, Int>
         get() = customLetterDistribution ?: defaultLetterDistribution
 
-    // --- SETTERS (called from SocketIOConfig) ---
-
+    // Implement DictionaryAware so SessionService / dictionary-upload can still call this
+    // for non-Scrabble-specific flows (e.g. the generic dictionary-upload socket event).
     override fun setDictionary(dictionary: WordDictionary?) {
         activeDictionary = dictionary
     }
 
-    fun setCustomLetterValues(values: Map<Char, Int>) {
-        customLetterValues = values
-    }
-
-    fun setCustomLetterDistribution(distribution: Map<Char, Int>) {
-        customLetterDistribution = distribution
-    }
-
-    /**
-     * @param multiplier scale factor for the letter counts.
-     *   0.5  → ~half the tiles (short game)
-     *   1.0  → default quantity (no change)
-     *   1.5  → ~50 % more tiles
-     *   2.0  → double tiles (extended game)
-     */
-    fun setGameLengthMultiplier(multiplier: Double) {
-        gameLengthMultiplier = multiplier.coerceAtLeast(0.1)
-    }
-
-    // --- GAME STATE ---
-
-    private val scores = mutableMapOf<UUID, Int>()
-    private val letterPouch = mutableListOf<Char>()
-    private val playerTrays = mutableMapOf<UUID, MutableList<Char>>()
+    // --- STATIC DEFAULTS ---
 
     private val defaultLetterValues = mapOf(
         'A' to 1, 'B' to 3, 'C' to 2, 'D' to 2, 'E' to 1, 'F' to 5, 'G' to 3, 'H' to 3,
@@ -87,6 +70,11 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
         'Y' to 2, 'Z' to 1
     )
 
+    // --- GAME STATE ---
+
+    private val scores = mutableMapOf<UUID, Int>()
+    private val letterPouch = mutableListOf<Char>()
+    private val playerTrays = mutableMapOf<UUID, MutableList<Char>>()
     private var activeSpecials = mapOf<Pair<Int, Int>, SpecialSquare>()
 
     val board = Array(15) { Array<Char?>(15) { null } }
@@ -95,22 +83,63 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
     private var currentPlayerIndex = 0
     private var consecutivePasses = 0
 
+    // --- CALLED BY SocketIOConfig for the generic dictionary-upload event ---
+
+    /**
+     * Parses a letter-config JSON file and applies the values it contains.
+     * Called by `SocketIOConfig` when the host uploads via the `upload-letter-values` event.
+     *
+     * JSON format (both keys optional):
+     * ```json
+     * {
+     *   "letterValues":       { "A": 1, "B": 3, … },
+     *   "letterDistribution": { "A": 9, "B": 2, … }
+     * }
+     * ```
+     *
+     * @return a human-readable summary string for the ACK response.
+     * @throws Exception if the JSON cannot be parsed.
+     */
+    fun applyLetterConfig(jsonData: ByteArray): String {
+        val raw = objectMapper.readValue(jsonData, RawLetterConfigJson::class.java)
+
+        val summary = mutableListOf<String>()
+
+        raw.letterValues
+            ?.mapKeys { (k, _) -> k.trim().uppercase().first() }
+            ?.takeIf { it.isNotEmpty() }
+            ?.let {
+                customLetterValues = it
+                summary += "${it.size} letter values"
+            }
+
+        raw.letterDistribution
+            ?.mapKeys { (k, _) -> k.trim().uppercase().first() }
+            ?.takeIf { it.isNotEmpty() }
+            ?.let {
+                customLetterDistribution = it
+                summary += "${it.size} distribution entries"
+            }
+
+        if (summary.isEmpty()) {
+            throw IllegalArgumentException("No valid letterValues or letterDistribution found in JSON")
+        }
+
+        return summary.joinToString(", ")
+    }
+
     // --- INITIALIZATION ---
 
     /**
-     * Fills [letterPouch] using [effectiveLetterDistribution] scaled by [gameLengthMultiplier].
-     *
-     * When multiplier == 1.0 the counts are used verbatim (no rounding involved).
-     * Otherwise each count is rounded to the nearest integer, clamped to at least 1.
+     * Fills the pouch using [effectiveLetterDistribution] scaled by [gameLengthMultiplier].
+     * When multiplier == 1.0 counts are used verbatim.  Otherwise each count is rounded to
+     * the nearest integer and clamped to ≥ 1 so no letter disappears entirely.
      */
     private fun initializeLetterPouch() {
         letterPouch.clear()
-        effectiveLetterDistribution.forEach { (letter, baseCount) ->
-            val count = if (gameLengthMultiplier == 1.0) {
-                baseCount
-            } else {
-                max(1, (baseCount * gameLengthMultiplier).roundToInt())
-            }
+        effectiveLetterDistribution.forEach { (letter, base) ->
+            val count = if (gameLengthMultiplier == 1.0) base
+            else max(1, (base * gameLengthMultiplier).roundToInt())
             repeat(count) { letterPouch.add(letter) }
         }
         letterPouch.shuffle()
@@ -119,48 +148,27 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
     private fun generateBoardData(): BoardData {
         val specials = mutableListOf<SpecialSquare>()
 
-        fun addSpecials(coords: List<Pair<Int, Int>>, wordMult: Int, letterMult: Int) {
+        fun add(coords: List<Pair<Int, Int>>, wordMult: Int, letterMult: Int) =
             coords.forEach { (x, y) ->
                 specials.add(SpecialSquare(x = x, y = y, wordMultiplier = wordMult, letterMultiplier = letterMult))
             }
-        }
 
-        // Triple word score — board edges
-        addSpecials(listOf(
-            0 to 0, 0 to 7, 0 to 14,
-            7 to 0,         7 to 14,
-            14 to 0, 14 to 7, 14 to 14
-        ), wordMult = 3, letterMult = 1)
+        add(listOf(0 to 0, 0 to 7, 0 to 14, 7 to 0, 7 to 14, 14 to 0, 14 to 7, 14 to 14),
+            wordMult = 3, letterMult = 1)
 
-        // Double word score — diagonals + centre star
-        addSpecials(listOf(
-            1 to 1, 2 to 2, 3 to 3, 4 to 4,
-            10 to 10, 11 to 11, 12 to 12, 13 to 13,
-            1 to 13, 2 to 12, 3 to 11, 4 to 10,
-            13 to 1, 12 to 2, 11 to 3, 10 to 4,
-            7 to 7
-        ), wordMult = 2, letterMult = 1)
+        add(listOf(1 to 1, 2 to 2, 3 to 3, 4 to 4, 10 to 10, 11 to 11, 12 to 12, 13 to 13,
+            1 to 13, 2 to 12, 3 to 11, 4 to 10, 13 to 1, 12 to 2, 11 to 3, 10 to 4, 7 to 7),
+            wordMult = 2, letterMult = 1)
 
-        // Triple letter score
-        addSpecials(listOf(
-            1 to 5, 1 to 9,
-            5 to 1, 5 to 5, 5 to 9, 5 to 13,
-            9 to 1, 9 to 5, 9 to 9, 9 to 13,
-            13 to 5, 13 to 9
-        ), wordMult = 1, letterMult = 3)
+        add(listOf(1 to 5, 1 to 9, 5 to 1, 5 to 5, 5 to 9, 5 to 13,
+            9 to 1, 9 to 5, 9 to 9, 9 to 13, 13 to 5, 13 to 9),
+            wordMult = 1, letterMult = 3)
 
-        // Double letter score
-        addSpecials(listOf(
-            0 to 3, 0 to 11,
-            2 to 6, 2 to 8,
-            3 to 0, 3 to 7, 3 to 14,
-            6 to 2, 6 to 6, 6 to 8, 6 to 12,
-            7 to 3, 7 to 11,
-            8 to 2, 8 to 6, 8 to 8, 8 to 12,
-            11 to 0, 11 to 7, 11 to 14,
-            12 to 6, 12 to 8,
-            14 to 3, 14 to 11
-        ), wordMult = 1, letterMult = 2)
+        add(listOf(0 to 3, 0 to 11, 2 to 6, 2 to 8, 3 to 0, 3 to 7, 3 to 14,
+            6 to 2, 6 to 6, 6 to 8, 6 to 12, 7 to 3, 7 to 11,
+            8 to 2, 8 to 6, 8 to 8, 8 to 12, 11 to 0, 11 to 7, 11 to 14,
+            12 to 6, 12 to 8, 14 to 3, 14 to 11),
+            wordMult = 1, letterMult = 2)
 
         activeSpecials = specials.associateBy { Pair(it.x, it.y) }
         return BoardData(15, 15, Coordinates(7, 7), specials)
@@ -168,20 +176,15 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
 
     private fun refillTray(playerId: UUID) {
         val tray = playerTrays.getOrPut(playerId) { mutableListOf() }
-        while (tray.size < 7 && letterPouch.isNotEmpty()) {
-            tray.add(letterPouch.removeAt(0))
-        }
+        while (tray.size < 7 && letterPouch.isNotEmpty()) tray.add(letterPouch.removeAt(0))
     }
 
     private fun getTrayLetters(playerId: UUID): List<Letter> =
         (playerTrays[playerId] ?: emptyList()).map { Letter(it, effectiveLetterValues[it] ?: 0) }
 
     /** Sends personalised tray_update to every player — used only at game start. */
-    private fun sendTrayUpdate(accessCode: String, server: SocketIOServer) {
-        players.forEach { user ->
-            sendToUser(user, server, "tray_update", TrayUpdate(getTrayLetters(user.userId)))
-        }
-    }
+    private fun sendTrayUpdate(accessCode: String, server: SocketIOServer) =
+        players.forEach { sendToUser(it, server, "tray_update", TrayUpdate(getTrayLetters(it.userId))) }
 
     // --- GAME LOOP ---
 
@@ -202,9 +205,9 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
         players.removeIf { it.userId == user.userId }
         if (user == host) {
             host = players.firstOrNull()
-            if (host != null) {
-                sendToUser(host!!, server, "host_assigned", mapOf("isHost" to true))
-                sendSysMsg(accessCode, server, "${host!!.nickname} jest teraz hostem.")
+            host?.let {
+                sendToUser(it, server, "host_assigned", mapOf("isHost" to true))
+                sendSysMsg(accessCode, server, "${it.nickname} jest teraz hostem.")
             }
         }
         sendSysMsg(accessCode, server, "${user.nickname} opuścił grę.")
@@ -214,13 +217,14 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
     override fun shouldTerminate(): Boolean = players.isEmpty()
 
     override fun getTypeForEventName(eventName: String): Class<*>? = when (eventName) {
-        "start_game"     -> Any::class.java
-        "submit_move"    -> SubmitMovePayload::class.java
-        "swap_tiles"     -> SwapTilesPayload::class.java
-        "pass"           -> Any::class.java
-        "check_word"     -> CheckWordPayload::class.java
-        "get_pouch_info" -> Any::class.java
-        else             -> null
+        "configure_game"  -> ConfigureGamePayload::class.java
+        "start_game"      -> Any::class.java
+        "submit_move"     -> SubmitMovePayload::class.java
+        "swap_tiles"      -> SwapTilesPayload::class.java
+        "pass"            -> Any::class.java
+        "check_word"      -> CheckWordPayload::class.java
+        "get_pouch_info"  -> Any::class.java
+        else              -> null
     }
 
     override fun <T> handleEvent(
@@ -228,16 +232,62 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
         user: User, accessCode: String, server: SocketIOServer, ack: AckRequest
     ) {
         when (eventName) {
-            "start_game"     -> handleStartGame(accessCode, server, user, ack)
-            "submit_move"    -> handleSubmitMove(eventData as SubmitMovePayload, user, accessCode, server, ack)
-            "swap_tiles"     -> handleSwapTiles(eventData as SwapTilesPayload, user, accessCode, server, ack)
-            "pass"           -> handlePass(user, accessCode, server, ack)
-            "check_word"     -> handleCheckWord(eventData as CheckWordPayload, ack)
-            "get_pouch_info" -> handleGetPouchInfo(ack)
+            "configure_game"  -> handleConfigureGame(eventData as ConfigureGamePayload, user, accessCode, server, ack)
+            "start_game"      -> handleStartGame(accessCode, server, user, ack)
+            "submit_move"     -> handleSubmitMove(eventData as SubmitMovePayload, user, accessCode, server, ack)
+            "swap_tiles"      -> handleSwapTiles(eventData as SwapTilesPayload, user, accessCode, server, ack)
+            "pass"            -> handlePass(user, accessCode, server, ack)
+            "check_word"      -> handleCheckWord(eventData as CheckWordPayload, ack)
+            "get_pouch_info"  -> handleGetPouchInfo(ack)
         }
     }
 
     // --- EVENT HANDLERS ---
+
+    /**
+     * Sets language (loads the dictionary via [dictionaryProvider]) and game-length multiplier.
+     * Must be called by the host before [handleStartGame].
+     *
+     * For "custom" language the host uploads a dictionary via the top-level `dictionary-upload`
+     * event and letter values via the top-level `upload-letter-values` event separately —
+     * both of those call back into this class through [setDictionary] / [applyLetterConfig].
+     */
+    private fun handleConfigureGame(
+        payload: ConfigureGamePayload,
+        user: User, accessCode: String, server: SocketIOServer, ack: AckRequest
+    ) {
+        fun ackError(msg: String) {
+            if (ack.isAckRequested) ack.sendAckData(mapOf("status" to "error", "message" to msg))
+        }
+
+        if (user.userId != host?.userId) return ackError("Only the host can configure the game")
+        if (isGameStarted)               return ackError("Cannot configure a game that has already started")
+
+        gameLengthMultiplier = payload.gameLengthMultiplier.coerceAtLeast(0.1)
+
+        when (val lang = payload.language.lowercase()) {
+            "en", "pl" -> {
+                val dict = dictionaryProvider(lang)
+                    ?: return ackError("Dictionary '$lang' is not available on the server")
+                activeDictionary = dict
+                sendSysMsg(accessCode, server,
+                    "Język: ${lang.uppercase()}, mnożnik długości gry: ${payload.gameLengthMultiplier}×.")
+            }
+            "custom" -> {
+                // Dictionary arrives via dictionary-upload; letter values via upload-letter-values.
+                sendSysMsg(accessCode, server,
+                    "Tryb własny – prześlij słownik i plik wartości liter przed startem. " +
+                            "Mnożnik długości gry: ${payload.gameLengthMultiplier}×.")
+            }
+            else -> return ackError("Unknown language: ${payload.language}")
+        }
+
+        if (ack.isAckRequested) ack.sendAckData(mapOf(
+            "status"              to "ok",
+            "language"            to payload.language,
+            "gameLengthMultiplier" to payload.gameLengthMultiplier
+        ))
+    }
 
     private fun handleStartGame(accessCode: String, server: SocketIOServer, user: User, ack: AckRequest) {
         fun ackError(msg: String) { if (ack.isAckRequested) ack.sendAckData(StartGameAckResponse("error", msg)) }
@@ -266,35 +316,26 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
         if (ack.isAckRequested) ack.sendAckData(StartGameAckResponse("ok"))
     }
 
-    /** Validates placement without committing — live feedback while tiles are still being placed. */
     private fun handleCheckWord(payload: CheckWordPayload, ack: AckRequest) {
         if (!ack.isAckRequested) return
         if (!isGameStarted) { ack.sendAckData(CheckWordResponse("invalid_placement")); return }
 
-        val result = validateMove(
-            board        = board,
-            placedTiles  = payload.placedTiles,
-            isFirstMove  = isFirstMove,
-            dictionary   = activeDictionary,
-            letterValues = effectiveLetterValues,
-            specials     = activeSpecials
-        )
+        val result = validateMove(board, payload.placedTiles, isFirstMove,
+            activeDictionary, effectiveLetterValues, activeSpecials)
         ack.sendAckData(CheckWordResponse(result.status, if (result.isValid) result.points else null))
     }
 
-    /** Returns the count and sorted list of remaining letters in the pouch. */
     private fun handleGetPouchInfo(ack: AckRequest) {
         if (!ack.isAckRequested) return
         ack.sendAckData(PouchInfoResponse(count = letterPouch.size, letters = letterPouch.sorted()))
     }
 
-    private fun broadcastTurnStart(accessCode: String, server: SocketIOServer) {
+    private fun broadcastTurnStart(accessCode: String, server: SocketIOServer) =
         broadcastEvent(accessCode, server, "turn_start", ScrabbleTurnStartPayload(
             activePlayerId = players[currentPlayerIndex].userId,
             lettersInPouch = letterPouch.size,
             scores         = scores.toMap()
         ))
-    }
 
     private fun handleSubmitMove(
         move: SubmitMovePayload, user: User,
@@ -304,45 +345,32 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
 
         if (!isGameStarted || players[currentPlayerIndex].userId != user.userId) return ackError("Not your turn")
 
-        val tray = playerTrays[user.userId] ?: return ackError("No tray found")
-
+        val tray     = playerTrays[user.userId] ?: return ackError("No tray found")
         val tempTray = tray.toMutableList()
         for (letter in move.placedTiles.map { it.letter }) {
             if (!tempTray.remove(letter)) return ackError("Nie masz odpowiednich liter na tacce!")
         }
 
         val result = PlacementValidator.validateMove(
-            board        = board,
-            placedTiles  = move.placedTiles,
-            isFirstMove  = isFirstMove,
-            dictionary   = activeDictionary,
-            letterValues = effectiveLetterValues,
-            specials     = activeSpecials
-        )
+            board, move.placedTiles, isFirstMove, activeDictionary, effectiveLetterValues, activeSpecials)
 
         if (result.isValid) {
             isFirstMove = false
             consecutivePasses = 0
             scores[user.userId] = (scores[user.userId] ?: 0) + result.points
-
             move.placedTiles.forEach { board[it.y][it.x] = it.letter }
             playerTrays[user.userId] = tempTray
             refillTray(user.userId)
 
             if (ack.isAckRequested) ack.sendAckData(MoveAckResponse(
-                status        = "accepted",
-                points        = result.points,
-                updatedScores = scores.toMap(),
-                newTray       = getTrayLetters(user.userId),
+                status         = "accepted",
+                points         = result.points,
+                updatedScores  = scores.toMap(),
+                newTray        = getTrayLetters(user.userId),
                 lettersInPouch = letterPouch.size
             ))
-
             broadcastEvent(accessCode, server, "move_accepted", MoveResultPayload(
-                playerId        = user.userId,
-                newlyPlacedTiles = move.placedTiles,
-                pointsGained    = result.points,
-                updatedScores   = scores.toMap()
-            ))
+                user.userId, move.placedTiles, result.points, scores.toMap()))
             sendSysMsg(accessCode, server, "${user.nickname} ułożył słowo za ${result.points} pkt.")
             checkGameEndOrAdvanceTurn(accessCode, server)
         } else {
@@ -368,15 +396,13 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
         letterPouch.addAll(payload.lettersToSwap)
         letterPouch.shuffle()
         refillTray(user.userId)
-
         consecutivePasses = 0
 
         if (ack.isAckRequested) ack.sendAckData(SwapAckResponse(
-            status        = "ok",
-            newTray       = getTrayLetters(user.userId),
+            status         = "ok",
+            newTray        = getTrayLetters(user.userId),
             lettersInPouch = letterPouch.size
         ))
-
         sendSysMsg(accessCode, server, "${user.nickname} wymienił ${payload.lettersToSwap.size} liter.")
         checkGameEndOrAdvanceTurn(accessCode, server)
     }
@@ -394,14 +420,12 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
 
     private fun checkGameEndOrAdvanceTurn(accessCode: String, server: SocketIOServer) {
         val isTrayEmpty = playerTrays[players[currentPlayerIndex].userId]?.isEmpty() == true
-
         if (consecutivePasses >= players.size * 2 || (isTrayEmpty && letterPouch.isEmpty())) {
             val winnerId = scores.maxByOrNull { it.value }?.key
-            broadcastEvent(accessCode, server, "game_over", mapOf(
-                "winner"      to winnerId,
-                "finalScores" to scores
-            ))
-            sendSysMsg(accessCode, server, "Gra zakończona! Wygrywa: ${players.find { it.userId == winnerId }?.nickname}")
+            broadcastEvent(accessCode, server, "game_over",
+                mapOf("winner" to winnerId, "finalScores" to scores))
+            sendSysMsg(accessCode, server,
+                "Gra zakończona! Wygrywa: ${players.find { it.userId == winnerId }?.nickname}")
             isGameStarted = false
         } else {
             currentPlayerIndex = (currentPlayerIndex + 1) % players.size
@@ -409,3 +433,11 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
         }
     }
 }
+
+// ─── INTERNAL JSON MODEL (used only by applyLetterConfig) ─────────────────────
+
+/** Raw Jackson target — String keys, normalised to Char after parsing. */
+private data class RawLetterConfigJson(
+    val letterValues: Map<String, Int>? = null,
+    val letterDistribution: Map<String, Int>? = null
+)

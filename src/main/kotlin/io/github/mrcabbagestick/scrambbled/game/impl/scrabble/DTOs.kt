@@ -11,9 +11,9 @@ data class PlayerInfoDTO(
     val iconUrl: String
 ) {
     constructor(user: User) : this(
-        id = user.userId,
+        id       = user.userId,
         nickname = user.nickname,
-        iconUrl = "/static/user_icons/${user.icon}.png"
+        iconUrl  = "/static/user_icons/${user.icon}.png"
     )
 }
 
@@ -33,12 +33,24 @@ data class BoardData(
     val specialSquares: List<SpecialSquare>
 )
 
-// --- INPUT PAYLOADS ---
+// ─── INPUT PAYLOADS ───────────────────────────────────────────────────────────
 
-data class PlacedTile(
+/**
+ * Payload for the `configure_game` game-specific event (sent before `start_game`).
+ *
+ * @property language            "en" | "pl" | "custom"
+ * @property gameLengthMultiplier scale factor for letter counts in the pouch.
+ *   0.5 = short, 1.0 = normal (default), 1.5 = long, 2.0 = extended.
+ */
+data class ConfigureGamePayload @JsonCreator constructor(
+    @JsonProperty("language")             val language: String = "en",
+    @JsonProperty("gameLengthMultiplier") val gameLengthMultiplier: Double = 1.0
+)
+
+data class PlacedTile @JsonCreator constructor(
     @JsonProperty("letter") val letter: Char,
-    @JsonProperty("x") val x: Int,
-    @JsonProperty("y") val y: Int
+    @JsonProperty("x")      val x: Int,
+    @JsonProperty("y")      val y: Int
 )
 
 data class SubmitMovePayload @JsonCreator constructor(
@@ -49,11 +61,11 @@ data class SwapTilesPayload @JsonCreator constructor(
     @JsonProperty("lettersToSwap") val lettersToSwap: List<Char>
 )
 
-data class CheckWordPayload(
+data class CheckWordPayload @JsonCreator constructor(
     @JsonProperty("placedTiles") val placedTiles: List<PlacedTile>
 )
 
-// --- BROADCAST PAYLOADS ---
+// ─── BROADCAST PAYLOADS ───────────────────────────────────────────────────────
 
 data class ScrabbleStartedPayload(
     val boardData: BoardData,
@@ -68,8 +80,8 @@ data class MoveResultPayload(
 )
 
 /**
- * Broadcast to all players when it's a new turn.
- * Contains all info the frontend needs to update the UI.
+ * Broadcast to all players at the start of every turn.
+ * Contains everything the UI needs to highlight the active player and update counters.
  */
 data class ScrabbleTurnStartPayload(
     val activePlayerId: UUID,
@@ -77,24 +89,20 @@ data class ScrabbleTurnStartPayload(
     val scores: Map<UUID, Int>
 )
 
-// --- ACK RESPONSE PAYLOADS ---
+// ─── ACK RESPONSE PAYLOADS ────────────────────────────────────────────────────
 
-/**
- * ACK for start_game (sent only to host).
- * Broadcasts start_game and tray_update events go separately to all players.
- */
 data class StartGameAckResponse(
     val status: String,           // "ok" | "error"
     val message: String? = null
 )
 
 /**
- * ACK for submit_move.
- * On "accepted" includes the player's refreshed tray and updated scores.
- * On "error" includes the reason.
+ * ACK for `submit_move`.
+ * On `"accepted"`: includes refreshed tray, updated scores, remaining pouch count.
+ * On `"error"`:    includes reason message.
  */
 data class MoveAckResponse(
-    val status: String,                       // "accepted" | "error"
+    val status: String,
     val message: String? = null,
     val points: Int? = null,
     val updatedScores: Map<UUID, Int>? = null,
@@ -102,47 +110,37 @@ data class MoveAckResponse(
     val lettersInPouch: Int? = null
 )
 
-/**
- * ACK for swap_tiles.
- */
+/** ACK for `swap_tiles`. */
 data class SwapAckResponse(
-    val status: String,           // "ok" | "error"
+    val status: String,
     val message: String? = null,
     val newTray: List<Letter>? = null,
     val lettersInPouch: Int? = null
 )
 
-/**
- * ACK for pass.
- */
+/** ACK for `pass`. */
 data class PassAckResponse(
-    val status: String,           // "ok" | "error"
+    val status: String,
     val message: String? = null
 )
 
-/**
- * ACK for check_word.
- */
+/** ACK for `check_word`. */
 data class CheckWordResponse(
     val status: String,           // "good" | "bad" | "invalid_placement" | "must_contain_starting_square"
     val points: Int? = null
 )
 
-/**
- * ACK for get_pouch_info.
- * Lists remaining letter counts so the frontend can show what's left in the bag.
- */
+/** ACK for `get_pouch_info`. Letters are sorted alphabetically. */
 data class PouchInfoResponse(
     val count: Int,
-    /** Remaining letters sorted alphabetically (standard Scrabble rules allow viewing remaining letters). */
     val letters: List<Char>
 )
 
-// --- INTERNALS ---
+// ─── INTERNALS ────────────────────────────────────────────────────────────────
 
 data class ValidationResult(
     val isValid: Boolean,
-    val status: String,           // "good" | "bad" | "invalid_placement" | "must_contain_starting_square"
+    val status: String,
     val points: Int = 0
 )
 
