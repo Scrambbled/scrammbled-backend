@@ -117,6 +117,8 @@ class ScrabbleGame : GameTemplate(Games.SCRABBLE_GAME), DictionaryAware {
             14 to 3, 14 to 11
         ), wordMult = 1, letterMult = 2)
 
+        this.activeSpecials = specials.associateBy { Pair(it.x, it.y) }
+
         return BoardData(15, 15, Coordinates(7, 7), specials)
     }
 
