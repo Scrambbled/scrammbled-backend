@@ -8,7 +8,7 @@ import java.util.UUID
 data class PlayerInfoDTO(
     val id: UUID,
     val nickname: String,
-    val iconUrl: String // "/static/user_icons/sock_puppet_blue.png"???
+    val iconUrl: String
 ) {
     constructor(user: User) : this(
         id = user.userId,
@@ -17,7 +17,6 @@ data class PlayerInfoDTO(
     )
 }
 
-// Plansza Daniela
 data class Coordinates(val x: Int, val y: Int)
 
 data class SpecialSquare(
@@ -34,7 +33,7 @@ data class BoardData(
     val specialSquares: List<SpecialSquare>
 )
 
-// --- PAYLOADY ---
+// --- INPUT PAYLOADS ---
 
 data class PlacedTile(
     @JsonProperty("letter") val letter: Char,
@@ -50,6 +49,12 @@ data class SwapTilesPayload @JsonCreator constructor(
     @JsonProperty("lettersToSwap") val lettersToSwap: List<Char>
 )
 
+data class CheckWordPayload(
+    @JsonProperty("placedTiles") val placedTiles: List<PlacedTile>
+)
+
+// --- BROADCAST PAYLOADS ---
+
 data class ScrabbleStartedPayload(
     val boardData: BoardData,
     val players: List<PlayerInfoDTO>
@@ -62,19 +67,83 @@ data class MoveResultPayload(
     val updatedScores: Map<UUID, Int>
 )
 
+/**
+ * Broadcast to all players when it's a new turn.
+ * Contains all info the frontend needs to update the UI.
+ */
+data class ScrabbleTurnStartPayload(
+    val activePlayerId: UUID,
+    val lettersInPouch: Int,
+    val scores: Map<UUID, Int>
+)
+
+// --- ACK RESPONSE PAYLOADS ---
+
+/**
+ * ACK for start_game (sent only to host).
+ * Broadcasts start_game and tray_update events go separately to all players.
+ */
+data class StartGameAckResponse(
+    val status: String,           // "ok" | "error"
+    val message: String? = null
+)
+
+/**
+ * ACK for submit_move.
+ * On "accepted" includes the player's refreshed tray and updated scores.
+ * On "error" includes the reason.
+ */
+data class MoveAckResponse(
+    val status: String,                       // "accepted" | "error"
+    val message: String? = null,
+    val points: Int? = null,
+    val updatedScores: Map<UUID, Int>? = null,
+    val newTray: List<Letter>? = null,
+    val lettersInPouch: Int? = null
+)
+
+/**
+ * ACK for swap_tiles.
+ */
+data class SwapAckResponse(
+    val status: String,           // "ok" | "error"
+    val message: String? = null,
+    val newTray: List<Letter>? = null,
+    val lettersInPouch: Int? = null
+)
+
+/**
+ * ACK for pass.
+ */
+data class PassAckResponse(
+    val status: String,           // "ok" | "error"
+    val message: String? = null
+)
+
+/**
+ * ACK for check_word.
+ */
+data class CheckWordResponse(
+    val status: String,           // "good" | "bad" | "invalid_placement" | "must_contain_starting_square"
+    val points: Int? = null
+)
+
+/**
+ * ACK for get_pouch_info.
+ * Lists remaining letter counts so the frontend can show what's left in the bag.
+ */
+data class PouchInfoResponse(
+    val count: Int,
+    /** Remaining letters sorted alphabetically (standard Scrabble rules allow viewing remaining letters). */
+    val letters: List<Char>
+)
+
+// --- INTERNALS ---
+
 data class ValidationResult(
     val isValid: Boolean,
-    val status: String, // "good", "bad", "invalid_placement", "must_contain_starting_square"
+    val status: String,           // "good" | "bad" | "invalid_placement" | "must_contain_starting_square"
     val points: Int = 0
-)
-
-data class CheckWordPayload(
-    @JsonProperty("placedTiles") val placedTiles: List<PlacedTile>
-)
-
-data class CheckWordResponse(
-    val status: String, // "good", "bad", "invalid_placement", "must_contain_starting_square"
-    val points: Int? = null
 )
 
 data class TileCoordinate(val x: Int, val y: Int, val letter: Char, val isNew: Boolean)
