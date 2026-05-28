@@ -2,20 +2,9 @@ package io.github.mrcabbagestick.scrambbled.game.impl.scrabble
 
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
-import io.github.mrcabbagestick.scrambbled.user.User
+import io.github.mrcabbagestick.scrambbled.user.PlayerInfoDTO
 import java.util.UUID
 
-data class PlayerInfoDTO(
-    val id: UUID,
-    val nickname: String,
-    val iconUrl: String
-) {
-    constructor(user: User) : this(
-        id       = user.userId,
-        nickname = user.nickname,
-        iconUrl  = "/static/user_icons/${user.icon}.png"
-    )
-}
 
 data class Coordinates(val x: Int, val y: Int)
 
@@ -38,7 +27,7 @@ data class BoardData(
 /**
  * Payload for the `configure_game` game-specific event (sent before `start_game`).
  *
- * @property language            "en" | "pl" | "custom"
+ * @property language             "en" | "pl" | "custom"
  * @property gameLengthMultiplier scale factor for letter counts in the pouch.
  *   0.5 = short, 1.0 = normal (default), 1.5 = long, 2.0 = extended.
  */
@@ -81,7 +70,6 @@ data class MoveResultPayload(
 
 /**
  * Broadcast to all players at the start of every turn.
- * Contains everything the UI needs to highlight the active player and update counters.
  */
 data class ScrabbleTurnStartPayload(
     val activePlayerId: UUID,
@@ -96,13 +84,8 @@ data class StartGameAckResponse(
     val message: String? = null
 )
 
-/**
- * ACK for `submit_move`.
- * On `"accepted"`: includes refreshed tray, updated scores, remaining pouch count.
- * On `"error"`:    includes reason message.
- */
 data class MoveAckResponse(
-    val status: String,
+    val status: String,           // "accepted" | "error"
     val message: String? = null,
     val points: Int? = null,
     val updatedScores: Map<UUID, Int>? = null,
@@ -110,21 +93,18 @@ data class MoveAckResponse(
     val lettersInPouch: Int? = null
 )
 
-/** ACK for `swap_tiles`. */
 data class SwapAckResponse(
-    val status: String,
+    val status: String,           // "ok" | "error"
     val message: String? = null,
     val newTray: List<Letter>? = null,
     val lettersInPouch: Int? = null
 )
 
-/** ACK for `pass`. */
 data class PassAckResponse(
-    val status: String,
+    val status: String,           // "ok" | "error"
     val message: String? = null
 )
 
-/** ACK for `check_word`. */
 data class CheckWordResponse(
     val status: String,           // "good" | "bad" | "invalid_placement" | "must_contain_starting_square"
     val points: Int? = null

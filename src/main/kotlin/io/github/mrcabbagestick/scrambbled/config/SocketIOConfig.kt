@@ -57,7 +57,7 @@ class SocketIOConfig(
             session.game.handleEvent(event, user, user.accessCode, server, ack)
         }
 
-        // ─── CHAT ────────────────────────────────────────────────────────────────────
+        // ─── CHAT ─────────────────────────────────────────────────────────────────────
 
         server.addEventListener("chat-message", MessageEvent::class.java) { client, event, ack ->
             val user    = userService.getUser(client.sessionId) ?: return@addEventListener
@@ -85,9 +85,9 @@ class SocketIOConfig(
         }
 
         // ─── FILE UPLOADS ────────────────────────────────────────────────────────────
-        // File uploads stay here because they transfer raw binary (ByteArray) which
-        // can't be cleanly wrapped in the JSON-based game-specific-event envelope.
-        // The actual processing is fully delegated to the game instance.
+        // Binary payloads (ByteArray) can't travel inside the JSON game-specific-event
+        // envelope, so these two events stay at the top level. All game logic is fully
+        // delegated to the game instance — SocketIOConfig only handles I/O here.
 
         /**
          * dictionary-upload
@@ -96,19 +96,25 @@ class SocketIOConfig(
          * Works for any game that implements DictionaryAware.
          *
          * Payload: `{ filename: String, data: ByteArray }`
-         * ACK:     String confirmation
+         *
+         * ACK:
+         * ```json
+         * { "status": "ok",    "wordCount": 12345 }
+         * { "status": "error", "message": "..." }
+         * ```
          */
         server.addEventListener("dictionary-upload", FileUploadEvent::class.java) { client, event, ack ->
             val user = userService.getUser(client.sessionId) ?: run {
-                ack.sendAckData("You are not connected to any session"); return@addEventListener
+                ack.sendAckData(DictionaryUploadAckResponse("error", message = "Not in a session"))
+                return@addEventListener
             }
             val session = sessionService.getSession(user.accessCode) ?: run {
-                ack.sendAckData("Session timed out or does not exist"); return@addEventListener
+                ack.sendAckData(DictionaryUploadAckResponse("error", message = "Session timed out or does not exist"))
+                return@addEventListener
             }
-
             val game = session.game
             if (game !is DictionaryAware) {
-                ack.sendAckData("This game does not support custom dictionaries")
+                ack.sendAckData(DictionaryUploadAckResponse("error", message = "This game does not support custom dictionaries"))
                 return@addEventListener
             }
 
@@ -119,16 +125,16 @@ class SocketIOConfig(
             session.game.sendSysMsg(user.accessCode, server,
                 "Host wgrał własny słownik: ${event.filename} (${customDict.wordCount} słów).")
 
-            ack.sendAckData("Dictionary uploaded: ${customDict.wordCount} words loaded")
+            ack.sendAckData(DictionaryUploadAckResponse("ok", wordCount = customDict.wordCount))
         }
 
         /**
          * upload-letter-values
          *
-         * Uploads a JSON file with custom letter point values and/or letter distribution
-         * for the pouch. Only applies to Scrabble sessions.
+         * Uploads a JSON file with custom letter point values and/or letter distribution.
+         * Only applies to Scrabble sessions. Parsing is handled by [ScrabbleGame.applyLetterConfig].
          *
-         * Expected JSON (both keys optional):
+         * JSON format (both keys optional):
          * ```json
          * {
          *   "letterValues":       { "A": 1, "B": 3, … },
@@ -136,34 +142,43 @@ class SocketIOConfig(
          * }
          * ```
          *
-         * Parsing and application are fully handled by [ScrabbleGame.applyLetterConfig].
-         *
          * Payload: `{ filename: String, data: ByteArray }`
-         * ACK:     String confirmation
+         *
+         * ACK:
+         * ```json
+         * { "status": "ok",    "letterValuesCount": 26, "distributionCount": 26 }
+         * { "status": "error", "message": "..." }
+         * ```
          */
         server.addEventListener("upload-letter-values", FileUploadEvent::class.java) { client, event, ack ->
             val user = userService.getUser(client.sessionId) ?: run {
-                ack.sendAckData("Not in a session"); return@addEventListener
+                ack.sendAckData(LetterValuesUploadAckResponse("error", message = "Not in a session"))
+                return@addEventListener
             }
             val session = sessionService.getSession(user.accessCode) ?: run {
-                ack.sendAckData("Session not found"); return@addEventListener
+                ack.sendAckData(LetterValuesUploadAckResponse("error", message = "Session not found"))
+                return@addEventListener
             }
-
             val game = session.game
             if (game !is ScrabbleGame) {
-                ack.sendAckData("This game does not support custom letter values")
+                ack.sendAckData(LetterValuesUploadAckResponse("error", message = "This game does not support custom letter values"))
                 return@addEventListener
             }
 
             runCatching { game.applyLetterConfig(event.data) }
                 .fold(
-                    onSuccess = { summary ->
+                    onSuccess = { result ->
                         session.game.sendSysMsg(user.accessCode, server,
-                            "Host wgrał własne wartości liter: ${event.filename}. $summary.")
-                        ack.sendAckData("Loaded from ${event.filename}: $summary")
+                            "Host wgrał własne wartości liter: ${event.filename} " +
+                                    "(${result.letterValuesCount} wartości, ${result.distributionCount} wpisów dystrybucji).")
+                        ack.sendAckData(LetterValuesUploadAckResponse(
+                            status             = "ok",
+                            letterValuesCount  = result.letterValuesCount,
+                            distributionCount  = result.distributionCount
+                        ))
                     },
                     onFailure = { e ->
-                        ack.sendAckData("Error parsing ${event.filename}: ${e.message}")
+                        ack.sendAckData(LetterValuesUploadAckResponse("error", message = e.message))
                     }
                 )
         }
@@ -179,7 +194,7 @@ class SocketIOConfig(
     }
 }
 
-// ─── DATA CLASSES ────────────────────────────────────────────────────────────────
+// ─── DATA CLASSES ─────────────────────────────────────────────────────────────
 
 class MessageEvent(@JsonProperty("message") val message: String)
 
@@ -188,4 +203,28 @@ data class UserData(@JsonProperty("data") val data: String)
 class FileUploadEvent(
     @JsonProperty("filename") val filename: String,
     @JsonProperty("data")     val data: ByteArray
+)
+
+/**
+ * ACK for `dictionary-upload`.
+ * @property wordCount number of words loaded (present on success).
+ * @property message   error description (present on error).
+ */
+data class DictionaryUploadAckResponse(
+    val status: String,            // "ok" | "error"
+    val wordCount: Int? = null,
+    val message: String? = null
+)
+
+/**
+ * ACK for `upload-letter-values`.
+ * @property letterValuesCount  how many letter→value pairs were loaded.
+ * @property distributionCount  how many letter→count pairs were loaded.
+ * @property message            error description (present on error).
+ */
+data class LetterValuesUploadAckResponse(
+    val status: String,                // "ok" | "error"
+    val letterValuesCount: Int? = null,
+    val distributionCount: Int? = null,
+    val message: String? = null
 )
