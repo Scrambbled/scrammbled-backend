@@ -5,19 +5,19 @@ import com.corundumstudio.socketio.SocketIOServer
 import com.fasterxml.jackson.annotation.JsonProperty
 import io.github.mrcabbagestick.scrambbled.game.GameTemplate
 import io.github.mrcabbagestick.scrambbled.game.Games
-import io.github.mrcabbagestick.scrambbled.user.PlayerInfoDTO
+import io.github.mrcabbagestick.scrambbled.game.PlayerRole
 import io.github.mrcabbagestick.scrambbled.user.User
 
 class TestGame : GameTemplate(Games.TEST_GAME) {
 
     override fun onUserJoin(user: User, accessCode: String, server: SocketIOServer) {
         println("User ${user.userId} joined TestGame in room: $accessCode")
-        broadcastEvent(accessCode, server, "user_joined", PlayerInfoDTO(user))
+        trackAndBroadcastJoin(user, PlayerRole.PLAYER, accessCode, server)
     }
 
     override fun onUserLeft(user: User, accessCode: String, server: SocketIOServer) {
         println("User ${user.userId} left TestGame in room: $accessCode")
-        broadcastEvent(accessCode, server, "user_left", PlayerInfoDTO(user))
+        trackAndBroadcastLeave(user, accessCode, server)
     }
 
     override fun getTypeForEventName(eventName: String): Class<*>? = when (eventName) {

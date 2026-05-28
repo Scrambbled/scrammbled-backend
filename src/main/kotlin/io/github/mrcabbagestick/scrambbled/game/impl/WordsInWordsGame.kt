@@ -1,13 +1,13 @@
 package io.github.mrcabbagestick.scrambbled.game.impl
 
 import com.corundumstudio.socketio.AckRequest
-import com.corundumstudio.socketio.SocketIOClient
 import com.corundumstudio.socketio.SocketIOServer
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
 import io.github.mrcabbagestick.scrambbled.game.DictionaryAware
 import io.github.mrcabbagestick.scrambbled.game.GameTemplate
 import io.github.mrcabbagestick.scrambbled.game.Games
+import io.github.mrcabbagestick.scrambbled.game.PlayerRole
 import io.github.mrcabbagestick.scrambbled.tools.dictionary.WordDictionary
 import io.github.mrcabbagestick.scrambbled.user.PlayerInfoDTO
 import io.github.mrcabbagestick.scrambbled.user.User
@@ -31,9 +31,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
 
     private var activeDictionary: WordDictionary? = null
 
-    override fun setDictionary(dictionary: WordDictionary?) {
-        this.activeDictionary = dictionary
-    }
+    override fun setDictionary(dictionary: WordDictionary?) { activeDictionary = dictionary }
 
     private val sentencePool = listOf(
         "Bread remembers", "We are not electric", "Teachers do not cook",
@@ -45,41 +43,38 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
     private fun generateRandomLetters(): String {
         val vowels = listOf('A', 'E', 'I', 'O', 'U', 'Y')
         val consonants = ('A'..'Z').filter { it !in vowels }
-        val pool = (1..4).map { vowels.random() } + (1..8).map { consonants.random() }
-        return pool.shuffled().joinToString(" ")
+        return ((1..4).map { vowels.random() } + (1..8).map { consonants.random() })
+            .shuffled().joinToString(" ")
     }
 
     private fun refreshPool() {
         currentPool = if (gameMode == "random") generateRandomLetters() else sentencePool.random()
     }
 
-    /**
-     * Broadcasts the current host as [PlayerInfoDTO] to ALL players in the room,
-     * so every client can show who the host is.
-     */
-    private fun hostUpgradeMessage(accessCode: String, server: SocketIOServer) {
-        val currentHost = host ?: return
-        broadcastEvent(accessCode, server, "host_assigned", PlayerInfoDTO(currentHost))
-    }
-
     override fun onUserJoin(user: User, accessCode: String, server: SocketIOServer) {
-        if (players.isEmpty() || host == null) {
-            host = user
-            hostUpgradeMessage(accessCode, server)
+        val isNewPlayer = !isGameStarted && !players.contains(user)
+
+        if (isNewPlayer) {
+            players.add(user)
         }
 
-        if (!isGameStarted && !players.contains(user)) {
-            players.add(user)
-            sendSysMsg(accessCode, server, "Gracz ${user.nickname} dołączył (Gracz ${players.size}).")
-        } else {
-            sendSysMsg(accessCode, server, "Gracz ${user.nickname} dołączył jako Obserwator.")
-            if (isGameStarted) {
-                val payload = GameSyncPayload(
-                    currentPool, currentRound, maxRounds,
-                    players[currentPlayerIndex].userId, roundScores, gameScores
-                )
-                server.getClient(user.userId)?.sendEvent("game_sync", payload)
-            }
+        if (players.size == 1 || host == null) {
+            host = players.first()
+            broadcastEvent(accessCode, server, "host_assigned", PlayerInfoDTO(host!!))
+        }
+
+        val role = if (isNewPlayer) PlayerRole.PLAYER else PlayerRole.OBSERVER
+
+        // Standard room tracking + player_joined broadcast + room_state to newcomer
+        trackAndBroadcastJoin(user, role, accessCode, server)
+
+        if (!isNewPlayer && isGameStarted) {
+            // Send game state snapshot to the late-joining observer
+            val syncPayload = GameSyncPayload(
+                currentPool, currentRound, maxRounds,
+                players[currentPlayerIndex].userId, roundScores, gameScores
+            )
+            server.getClient(user.userId)?.sendEvent("game_sync", syncPayload)
         }
     }
 
@@ -89,10 +84,14 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
 
         if (user == host) {
             host = players.firstOrNull()
-            if (host != null) hostUpgradeMessage(accessCode, server)
+            host?.let {
+                broadcastEvent(accessCode, server, "host_assigned", PlayerInfoDTO(it))
+                sendSysMsg(accessCode, server, "${it.nickname} jest teraz hostem.")
+            }
         }
 
-        sendSysMsg(accessCode, server, "Gracz ${user.nickname} opuścił grę.")
+        // Standard player_left broadcast
+        trackAndBroadcastLeave(user, accessCode, server)
 
         if (players.isEmpty()) {
             isGameStarted = false
@@ -126,8 +125,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
     }
 
     private fun handleStartGame(data: StartGameData, accessCode: String, server: SocketIOServer, user: User) {
-        if (user != host) return
-        if (isGameStarted || players.isEmpty()) return
+        if (user != host || isGameStarted || players.isEmpty()) return
 
         isGameStarted = true
         maxRounds = if (data.rounds > 0) data.rounds else 3
@@ -138,47 +136,37 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
         betweenRounds = false
         usedWords.clear()
 
-        players.forEach {
-            gameScores[it.userId] = 0
-            roundScores[it.userId] = 0
-        }
+        players.forEach { roundScores[it.userId] = 0; gameScores[it.userId] = 0 }
         players.shuffle()
         refreshPool()
 
-        // Players sent as PlayerInfoDTO list so frontend has names + icons, not just UUIDs
-        val payload = GameStartedPayload(currentPool, maxRounds, players.map { PlayerInfoDTO(it) }, gameMode)
-        broadcastEvent(accessCode, server, "game_started", payload)
+        broadcastEvent(accessCode, server, "game_started", GameStartedPayload(
+            currentPool, maxRounds, players.map { PlayerInfoDTO(it) }, gameMode))
         sendSysMsg(accessCode, server, "Gra wystartowała! Tryb: ${if (gameMode == "random") "Losowe Litery" else "Zdania"}.")
         broadcastEvent(accessCode, server, "new_round", StartRoundPayload(currentRound))
         broadcastTurnStart(accessCode, server)
     }
 
-    private fun broadcastTurnStart(accessCode: String, server: SocketIOServer) {
-        val activePlayerId = players[currentPlayerIndex].userId
-        broadcastEvent(accessCode, server, "turn_start", TurnStartPayload(activePlayerId, currentRound, currentPool))
-    }
+    private fun broadcastTurnStart(accessCode: String, server: SocketIOServer) =
+        broadcastEvent(accessCode, server, "turn_start",
+            TurnStartPayload(players[currentPlayerIndex].userId, currentRound, currentPool))
 
     private fun handleSubmitWord(word: String, user: User, accessCode: String, server: SocketIOServer) {
-        if (!isGameStarted || players[currentPlayerIndex] != user) return
-        if (betweenRounds) return
+        if (!isGameStarted || players[currentPlayerIndex] != user || betweenRounds) return
 
         val upperWord = word.trim().uppercase()
-
-        val isUnique    = !usedWords.contains(upperWord)
-        val canBeFormed = canFormWord(upperWord, currentPool)
+        val isUnique     = !usedWords.contains(upperWord)
+        val canBeFormed  = canFormWord(upperWord, currentPool)
         val isLongEnough = upperWord.length >= 2
-        val isRealWord  = activeDictionary?.isValidWord(upperWord) ?: false
+        val isRealWord   = activeDictionary?.isValidWord(upperWord) ?: false
 
         if (isUnique && canBeFormed && isLongEnough && isRealWord) {
             usedWords.add(upperWord)
-
-            val points = upperWord.length + upperWord.sumOf { char ->
-                when (char) { 'Z' -> 7; 'J' -> 6; 'Q' -> 5; 'X' -> 4; 'K' -> 3; 'V' -> 2; 'B' -> 1; else -> 0 }
+            val points = upperWord.length + upperWord.sumOf { c ->
+                when (c) { 'Z' -> 7; 'J' -> 6; 'Q' -> 5; 'X' -> 4; 'K' -> 3; 'V' -> 2; 'B' -> 1; else -> 0 }
             }
-
             roundScores[user.userId] = (roundScores[user.userId] ?: 0) + points
             consecutivePasses = 0
-
             broadcastEvent(accessCode, server, "word_result",
                 WordResultPayload(true, upperWord, points, "Zaliczono!", roundScores))
             sendSysMsg(accessCode, server, "${user.nickname} ułożył(a) '$upperWord' (+$points pkt).")
@@ -197,9 +185,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
     }
 
     private fun handlePass(user: User, accessCode: String, server: SocketIOServer) {
-        if (!isGameStarted || players.isEmpty() || players[currentPlayerIndex] != user) return
-        if (betweenRounds) return
-
+        if (!isGameStarted || players.isEmpty() || players[currentPlayerIndex] != user || betweenRounds) return
         broadcastEvent(accessCode, server, "pass", PlayerPassedPayload(user.userId))
         sendSysMsg(accessCode, server, "${user.nickname} pasuje.")
         consecutivePasses++
@@ -207,9 +193,7 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
     }
 
     private fun handleStartRound(accessCode: String, server: SocketIOServer, user: User) {
-        if (user != host) return
-        if (!betweenRounds) return
-
+        if (user != host || !betweenRounds) return
         betweenRounds = false
         broadcastEvent(accessCode, server, "new_round", StartRoundPayload(currentRound))
         sendSysMsg(accessCode, server, "New round: $currentRound!")
@@ -254,8 +238,8 @@ class WordsInWordsGame : GameTemplate(Games.WORDS_IN_WORDS), DictionaryAware {
     }
 
     private fun canFormWord(word: String, pool: String): Boolean {
-        val availableLetters = pool.uppercase().replace(Regex("[^A-Z]"), "").toMutableList()
-        for (char in word) { if (!availableLetters.remove(char)) return false }
+        val available = pool.uppercase().replace(Regex("[^A-Z]"), "").toMutableList()
+        for (char in word) { if (!available.remove(char)) return false }
         return true
     }
 }
@@ -271,10 +255,6 @@ data class StartGameData @JsonCreator constructor(
 
 data class StartRoundPayload(val round: Int)
 
-/**
- * Sent on game start. [players] is [PlayerInfoDTO] list so frontend
- * can display names and icons, not just resolve UUIDs.
- */
 data class GameStartedPayload(
     val currentPool: String,
     val totalRounds: Int,
@@ -291,6 +271,3 @@ data class GameSyncPayload(
     val currentPool: String, val currentRound: Int, val maxRounds: Int,
     val activePlayerId: UUID, val roundScores: Map<UUID, Int>, val gameScores: Map<UUID, Int>
 )
-
-/** Broadcast by [WordsInWordsGame] when the host changes. */
-data class HostUpgradePayload(val host: PlayerInfoDTO)

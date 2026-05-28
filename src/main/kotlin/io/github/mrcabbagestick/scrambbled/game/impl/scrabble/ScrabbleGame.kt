@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import io.github.mrcabbagestick.scrambbled.game.DictionaryAware
 import io.github.mrcabbagestick.scrambbled.game.GameTemplate
 import io.github.mrcabbagestick.scrambbled.game.Games
+import io.github.mrcabbagestick.scrambbled.game.PlayerRole
 import io.github.mrcabbagestick.scrambbled.game.impl.scrabble.PlacementValidator.validateMove
 import io.github.mrcabbagestick.scrambbled.tools.dictionary.WordDictionary
 import io.github.mrcabbagestick.scrambbled.user.PlayerInfoDTO
@@ -172,30 +173,39 @@ class ScrabbleGame(
     // --- GAME LOOP ---
 
     override fun onUserJoin(user: User, accessCode: String, server: SocketIOServer) {
-        if (!isGameStarted && !players.any { it.userId == user.userId }) {
+        val isNewPlayer = !isGameStarted && !players.any { it.userId == user.userId }
+
+        if (isNewPlayer) {
             players.add(user)
             if (host == null) {
                 host = user
-                // Broadcast to everyone so all clients know who the host is
+                // Broadcast new host info to everyone (the player_joined below will also
+                // carry hostId, but an explicit host_assigned makes the frontend's job easier)
                 broadcastEvent(accessCode, server, "host_assigned", PlayerInfoDTO(user))
             }
-            sendSysMsg(accessCode, server, "${user.nickname} dołączył do gry (Gracz ${players.size}).")
-        } else {
-            sendSysMsg(accessCode, server, "${user.nickname} dołączył jako Obserwator.")
         }
+
+        val role = if (isNewPlayer) PlayerRole.PLAYER else PlayerRole.OBSERVER
+
+        // Registers in connectedMembers, broadcasts player_joined to all,
+        // and sends room_state snapshot to the newcomer.
+        trackAndBroadcastJoin(user, role, accessCode, server)
     }
 
     override fun onUserLeft(user: User, accessCode: String, server: SocketIOServer) {
         players.removeIf { it.userId == user.userId }
+
         if (user == host) {
             host = players.firstOrNull()
             host?.let {
-                // Broadcast new host to everyone
                 broadcastEvent(accessCode, server, "host_assigned", PlayerInfoDTO(it))
                 sendSysMsg(accessCode, server, "${it.nickname} jest teraz hostem.")
             }
         }
-        sendSysMsg(accessCode, server, "${user.nickname} opuścił grę.")
+
+        // Removes from connectedMembers and broadcasts player_left to all.
+        trackAndBroadcastLeave(user, accessCode, server)
+
         if (players.isEmpty()) isGameStarted = false
     }
 
