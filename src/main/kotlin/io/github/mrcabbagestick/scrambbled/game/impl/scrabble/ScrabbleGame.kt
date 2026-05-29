@@ -122,6 +122,24 @@ class ScrabbleGame(
         return LetterConfigApplyResult(letterValuesCount, distributionCount)
     }
 
+    // --- HELPERS ---
+
+    /** Converts a [PlacedTile] (input type, no points) to a [BoardTile] (output type, with points). */
+    private fun PlacedTile.toBoardTile() =
+        BoardTile(letter = letter, points = effectiveLetterValues[letter] ?: 0, x = x, y = y)
+
+    /** Collects all occupied cells as [BoardTile] list. */
+    private fun buildBoardTiles(): List<BoardTile> {
+        val tiles = mutableListOf<BoardTile>()
+        for (y in 0..14) {
+            for (x in 0..14) {
+                val letter = board[y][x] ?: continue
+                tiles.add(BoardTile(letter, effectiveLetterValues[letter] ?: 0, x, y))
+            }
+        }
+        return tiles
+    }
+
     // --- INITIALIZATION ---
 
     /**
@@ -179,8 +197,7 @@ class ScrabbleGame(
             players.add(user)
             if (host == null) {
                 host = user
-                // Broadcast new host info to everyone (the player_joined below will also
-                // carry hostId, but an explicit host_assigned makes the frontend's job easier)
+                // Broadcast new host info to everyone
                 broadcastEvent(accessCode, server, "host_assigned", PlayerInfoDTO(user))
             }
         }
@@ -190,6 +207,12 @@ class ScrabbleGame(
         // Registers in connectedMembers, broadcasts player_joined to all,
         // and sends room_state snapshot to the newcomer.
         trackAndBroadcastJoin(user, role, accessCode, server)
+
+        // Late-joining observer gets a board snapshot directly since turn_start
+        // won't fire again just for them.
+        if (!isNewPlayer && isGameStarted) {
+            sendToUser(user, server, "board_state", BoardStatePayload(buildBoardTiles()))
+        }
     }
 
     override fun onUserLeft(user: User, accessCode: String, server: SocketIOServer) {
@@ -324,11 +347,15 @@ class ScrabbleGame(
         ack.sendAckData(PouchInfoResponse(count = letterPouch.size, letters = letterPouch.sorted()))
     }
 
+    /**
+     * Broadcast at the start of every turn.
+     */
     private fun broadcastTurnStart(accessCode: String, server: SocketIOServer) =
         broadcastEvent(accessCode, server, "turn_start", ScrabbleTurnStartPayload(
             activePlayerId = players[currentPlayerIndex].userId,
             lettersInPouch = letterPouch.size,
-            scores         = scores.toMap()
+            scores         = scores.toMap(),
+            board          = buildBoardTiles()
         ))
 
     private fun handleSubmitMove(
@@ -363,8 +390,12 @@ class ScrabbleGame(
                 newTray        = getTrayLetters(user.userId),
                 lettersInPouch = letterPouch.size
             ))
-            broadcastEvent(accessCode, server, "move_accepted",
-                MoveResultPayload(user.userId, move.placedTiles, result.points, scores.toMap()))
+            broadcastEvent(accessCode, server, "move_accepted", MoveResultPayload(
+                playerId         = user.userId,
+                newlyPlacedTiles = move.placedTiles.map { it.toBoardTile() },
+                pointsGained     = result.points,
+                updatedScores    = scores.toMap()
+            ))
             sendSysMsg(accessCode, server, "${user.nickname} ułożył słowo za ${result.points} pkt.")
             checkGameEndOrAdvanceTurn(accessCode, server)
         } else {

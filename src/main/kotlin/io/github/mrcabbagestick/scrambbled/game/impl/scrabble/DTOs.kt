@@ -61,9 +61,20 @@ data class ScrabbleStartedPayload(
     val players: List<PlayerInfoDTO>
 )
 
+data class BoardTile(
+    val letter: Char,
+    val points: Int,
+    val x: Int,
+    val y: Int
+)
+
+data class BoardStatePayload(
+    val tiles: List<BoardTile>
+)
+
 data class MoveResultPayload(
     val playerId: UUID,
-    val newlyPlacedTiles: List<PlacedTile>,
+    val newlyPlacedTiles: List<BoardTile>,
     val pointsGained: Int,
     val updatedScores: Map<UUID, Int>
 )
@@ -74,7 +85,8 @@ data class MoveResultPayload(
 data class ScrabbleTurnStartPayload(
     val activePlayerId: UUID,
     val lettersInPouch: Int,
-    val scores: Map<UUID, Int>
+    val scores: Map<UUID, Int>,
+    val board: List<BoardTile>
 )
 
 // ─── ACK RESPONSE PAYLOADS ────────────────────────────────────────────────────
