@@ -416,7 +416,7 @@ class ScrabbleGame(
 
             // If the pouch just ran out, start the last round
             if (letterPouch.isEmpty() && lastRoundTurnsLeft < 0) {
-                lastRoundTurnsLeft = players.size
+                lastRoundTurnsLeft = players.size + 1
                 sendSysMsg(accessCode, server,
                     "Worek z literami jest pusty! Każdy gracz otrzymuje jeszcze jedną turę.")
             }
