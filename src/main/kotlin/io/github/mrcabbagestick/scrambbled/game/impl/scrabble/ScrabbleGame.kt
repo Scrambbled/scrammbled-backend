@@ -83,6 +83,19 @@ class ScrabbleGame(
     private var currentPlayerIndex = 0
     private var consecutivePasses = 0
 
+    /**
+     * Number of turns remaining in the last round.
+     * -1 = normal play.
+     *  N = last round in progress; decremented after each turn (including passes).
+     *  0 = trigger game end.
+     *
+     * Set to [players.size] when the pouch becomes empty after any accepted move,
+     * giving every player exactly one final turn (starting from the next player,
+     * which means the player who emptied the bag plays last in the final round
+     * since the rotation naturally wraps around).
+     */
+    private var lastRoundTurnsLeft: Int = -1
+
     // --- PUBLIC API (called from SocketIOConfig for file uploads) ---
 
     /**
@@ -115,9 +128,8 @@ class ScrabbleGame(
             ?.takeIf { it.isNotEmpty() }
             ?.let { customLetterDistribution = it; distributionCount = it.size }
 
-        if (letterValuesCount == 0 && distributionCount == 0) {
+        if (letterValuesCount == 0 && distributionCount == 0)
             throw IllegalArgumentException("No valid letterValues or letterDistribution found in JSON")
-        }
 
         return LetterConfigApplyResult(letterValuesCount, distributionCount)
     }
@@ -160,7 +172,9 @@ class ScrabbleGame(
     private fun generateBoardData(): BoardData {
         val specials = mutableListOf<SpecialSquare>()
         fun add(coords: List<Pair<Int, Int>>, wm: Int, lm: Int) =
-            coords.forEach { (x, y) -> specials.add(SpecialSquare(x = x, y = y, wordMultiplier = wm, letterMultiplier = lm)) }
+            coords.forEach { (x, y) ->
+                specials.add(SpecialSquare(x = x, y = y, wordMultiplier = wm, letterMultiplier = lm))
+            }
 
         add(listOf(0 to 0, 0 to 7, 0 to 14, 7 to 0, 7 to 14, 14 to 0, 14 to 7, 14 to 14), 3, 1)
         add(listOf(1 to 1, 2 to 2, 3 to 3, 4 to 4, 10 to 10, 11 to 11, 12 to 12, 13 to 13,
@@ -316,6 +330,7 @@ class ScrabbleGame(
 
         isGameStarted = true
         consecutivePasses = 0
+        lastRoundTurnsLeft = -1
         isFirstMove = true
 
         players.shuffle()
@@ -355,7 +370,9 @@ class ScrabbleGame(
             activePlayerId = players[currentPlayerIndex].userId,
             lettersInPouch = letterPouch.size,
             scores         = scores.toMap(),
-            board          = buildBoardTiles()
+            board          = buildBoardTiles(),
+            isLastRound     = lastRoundTurnsLeft >= 0,
+            lastRoundTurnsLeft = if (lastRoundTurnsLeft >= 0) lastRoundTurnsLeft else null
         ))
 
     private fun handleSubmitMove(
@@ -383,6 +400,13 @@ class ScrabbleGame(
             playerTrays[user.userId] = tempTray
             refillTray(user.userId)
 
+            // If the pouch just ran out, start the last round
+            if (letterPouch.isEmpty() && lastRoundTurnsLeft < 0) {
+                lastRoundTurnsLeft = players.size
+                sendSysMsg(accessCode, server,
+                    "Worek z literami jest pusty! Każdy gracz otrzymuje jeszcze jedną turę.")
+            }
+
             if (ack.isAckRequested) ack.sendAckData(MoveAckResponse(
                 status         = "accepted",
                 points         = result.points,
@@ -397,7 +421,7 @@ class ScrabbleGame(
                 updatedScores    = scores.toMap()
             ))
             sendSysMsg(accessCode, server, "${user.nickname} ułożył słowo za ${result.points} pkt.")
-            checkGameEndOrAdvanceTurn(accessCode, server)
+            advanceTurn(accessCode, server)
         } else {
             ackError(when (result.status) {
                 "must_contain_starting_square" -> "Pierwsze słowo musi przechodzić przez środek planszy!"
@@ -415,6 +439,10 @@ class ScrabbleGame(
         fun ackError(msg: String) { if (ack.isAckRequested) ack.sendAckData(SwapAckResponse("error", message = msg)) }
 
         if (!isGameStarted || players[currentPlayerIndex].userId != user.userId) return ackError("Not your turn")
+
+        // Swapping tiles is only allowed while the pouch still has tiles
+        if (letterPouch.isEmpty()) return ackError("Nie można wymieniać liter gdy worek jest pusty!")
+
         val tray = playerTrays[user.userId] ?: return ackError("No tray found")
 
         payload.lettersToSwap.forEach { tray.remove(it) }
@@ -429,7 +457,7 @@ class ScrabbleGame(
             lettersInPouch = letterPouch.size
         ))
         sendSysMsg(accessCode, server, "${user.nickname} wymienił ${payload.lettersToSwap.size} liter.")
-        checkGameEndOrAdvanceTurn(accessCode, server)
+        advanceTurn(accessCode, server)
     }
 
     private fun handlePass(user: User, accessCode: String, server: SocketIOServer, ack: AckRequest) {
@@ -440,22 +468,84 @@ class ScrabbleGame(
         consecutivePasses++
         if (ack.isAckRequested) ack.sendAckData(PassAckResponse("ok"))
         sendSysMsg(accessCode, server, "${user.nickname} pasuje.")
-        checkGameEndOrAdvanceTurn(accessCode, server)
+        advanceTurn(accessCode, server)
     }
 
-    private fun checkGameEndOrAdvanceTurn(accessCode: String, server: SocketIOServer) {
-        val isTrayEmpty = playerTrays[players[currentPlayerIndex].userId]?.isEmpty() == true
-        if (consecutivePasses >= players.size * 2 || (isTrayEmpty && letterPouch.isEmpty())) {
-            val winnerId = scores.maxByOrNull { it.value }?.key
-            broadcastEvent(accessCode, server, "game_over",
-                mapOf("winner" to winnerId, "finalScores" to scores))
-            sendSysMsg(accessCode, server,
-                "Gra zakończona! Wygrywa: ${players.find { it.userId == winnerId }?.nickname}")
-            isGameStarted = false
-        } else {
-            currentPlayerIndex = (currentPlayerIndex + 1) % players.size
-            broadcastTurnStart(accessCode, server)
+    /**
+     * Advances the turn pointer and checks end conditions.
+     *
+     * End conditions (checked in order):
+     * 1. All players passed [players.size * 2] times in a row (deadlock — no one can play).
+     * 2. Last round is in progress and all last-round turns have been taken.
+     * 3. Otherwise — move to the next player normally.
+     */
+    private fun advanceTurn(accessCode: String, server: SocketIOServer) {
+        currentPlayerIndex = (currentPlayerIndex + 1) % players.size
+
+        // Decrement last-round counter if applicable
+        if (lastRoundTurnsLeft > 0) lastRoundTurnsLeft--
+
+        when {
+            consecutivePasses >= players.size * 2 -> {
+                // Everyone passed repeatedly — total deadlock, end immediately
+                endGame(accessCode, server, reason = "deadlock")
+            }
+            lastRoundTurnsLeft == 0 -> {
+                // Last round finished — every player had their final turn
+                endGame(accessCode, server, reason = "pouch_empty")
+            }
+            else -> broadcastTurnStart(accessCode, server)
         }
+    }
+
+    /**
+     * Ends the game.
+     *
+     * Standard Scrabble scoring adjustment:
+     * - Each player's remaining tray value is subtracted from their score.
+     * - If one player emptied their tray, the sum of all other players' remaining
+     *   tiles is added to that player's score.
+     *
+     * [reason] is forwarded to the frontend so it can show a context-appropriate message.
+     */
+    private fun endGame(accessCode: String, server: SocketIOServer, reason: String) {
+        // Calculate tray penalties / bonuses
+        val trayValues = players.associate { player ->
+            player.userId to (playerTrays[player.userId] ?: emptyList())
+                .sumOf { effectiveLetterValues[it] ?: 0 }
+        }
+
+        val emptyTrayPlayer = players.find { (playerTrays[it.userId]?.isEmpty() == true) }
+
+        if (emptyTrayPlayer != null) {
+            // That player gains the sum of everyone else's remaining tiles
+            val bonus = trayValues.filterKeys { it != emptyTrayPlayer.userId }.values.sum()
+            scores[emptyTrayPlayer.userId] = (scores[emptyTrayPlayer.userId] ?: 0) + bonus
+            // Everyone else loses their tray value
+            players.filter { it.userId != emptyTrayPlayer.userId }.forEach { player ->
+                scores[player.userId] = (scores[player.userId] ?: 0) - (trayValues[player.userId] ?: 0)
+            }
+        } else {
+            // No one emptied their tray — everyone just loses their remaining tile values
+            players.forEach { player ->
+                scores[player.userId] = (scores[player.userId] ?: 0) - (trayValues[player.userId] ?: 0)
+            }
+        }
+
+        val finalScores = scores.toMap()
+        val winnerId = finalScores.maxByOrNull { it.value }?.key
+
+        broadcastEvent(accessCode, server, "game_over", GameOverPayload(
+            winnerId     = winnerId,
+            finalScores  = finalScores,
+            trayPenalties = trayValues,
+            reason        = reason    // "pouch_empty" | "deadlock"
+        ))
+
+        sendSysMsg(accessCode, server,
+            "Gra zakończona! Wygrywa: ${players.find { it.userId == winnerId }?.nickname}")
+
+        isGameStarted = false
     }
 }
 

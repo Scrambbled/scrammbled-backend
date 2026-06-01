@@ -40,7 +40,7 @@ class TestGame : GameTemplate(Games.TEST_GAME) {
     }
 
     override fun shouldTerminate(): Boolean {
-        TODO("Not yet implemented")
+        return false
     }
 }
 

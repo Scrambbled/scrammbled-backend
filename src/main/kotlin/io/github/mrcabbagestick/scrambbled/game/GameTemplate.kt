@@ -96,12 +96,12 @@ abstract class GameTemplate(val game: Games) {
         broadcastEvent(accessCode, server, "player_left", PlayerLeftPayload(PlayerInfoDTO(user)))
     }
 
-    private fun buildRoomState(): RoomStatePayload {
-        val members = connectedMembers.values.map {
-            RoomMemberDTO(PlayerInfoDTO(it.user), it.role.name.lowercase())
-        }
-        return RoomStatePayload(members = members, hostId = host?.userId)
-    }
+    private fun buildRoomState() = RoomStatePayload(
+        gameId   = game.gameId,
+        gameName = game.name,         // enum name, e.g. "SCRABBLE_GAME"
+        members  = connectedMembers.values.map { RoomMemberDTO(PlayerInfoDTO(it.user), it.role.name.lowercase()) },
+        hostId   = host?.userId
+    )
 
     // ─── ACK QUERIES ─────────────────────────────────────────────────────────
 
@@ -155,6 +155,8 @@ abstract class GameTemplate(val game: Games) {
      * Contains the full snapshot of everyone already present.
      */
     data class RoomStatePayload(
+        val gameId: String,            // e.g. "scrabble_game", "rps_game"
+        val gameName: String,          // enum name, e.g. "SCRABBLE_GAME"
         val members: List<RoomMemberDTO>,
         val hostId: UUID?
     )

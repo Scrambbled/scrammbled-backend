@@ -80,13 +80,30 @@ data class MoveResultPayload(
 )
 
 /**
- * Broadcast to all players at the start of every turn.
+ * Broadcast at the start of every turn.
+ * [board] — full board snapshot so the frontend can re-render without own state.
+ * [isLastRound] — true when the pouch has run out and the final round is in progress.
+ * [lastRoundTurnsLeft] — how many turns remain in the last round (null during normal play).
  */
 data class ScrabbleTurnStartPayload(
     val activePlayerId: UUID,
     val lettersInPouch: Int,
     val scores: Map<UUID, Int>,
-    val board: List<BoardTile>
+    val board: List<BoardTile>,
+    val isLastRound: Boolean,
+    val lastRoundTurnsLeft: Int?
+)
+
+/**
+ * Broadcast when the game ends.
+ * [trayPenalties] — remaining tile values per player (for display in the end screen).
+ * [reason] — "pouch_empty" (normal end) or "deadlock" (everyone kept passing).
+ */
+data class GameOverPayload(
+    val winnerId: UUID?,
+    val finalScores: Map<UUID, Int>,
+    val trayPenalties: Map<UUID, Int>,
+    val reason: String
 )
 
 // ─── ACK RESPONSE PAYLOADS ────────────────────────────────────────────────────
