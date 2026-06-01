@@ -152,6 +152,22 @@ class ScrabbleGame(
         return tiles
     }
 
+    private fun resetGameState() {
+        for(y in 0..14) {
+            for (x in 0..14) {
+                board[y][x] = null
+            }
+        }
+        scores.clear()
+        letterPouch.clear()
+        playerTrays.clear()
+        activeSpecials = emptyMap()
+        isFirstMove = true
+        currentPlayerIndex = 0
+        consecutivePasses = 0
+        lastRoundTurnsLeft = -1
+    }
+
     // --- INITIALIZATION ---
 
     /**
@@ -328,10 +344,8 @@ class ScrabbleGame(
         if (isGameStarted)               return ackError("Game has already started")
         if (players.isEmpty())           return ackError("No players in the room")
 
+        resetGameState()
         isGameStarted = true
-        consecutivePasses = 0
-        lastRoundTurnsLeft = -1
-        isFirstMove = true
 
         players.shuffle()
         players.forEach { scores[it.userId] = 0 }
@@ -509,36 +523,12 @@ class ScrabbleGame(
      * [reason] is forwarded to the frontend so it can show a context-appropriate message.
      */
     private fun endGame(accessCode: String, server: SocketIOServer, reason: String) {
-        // Calculate tray penalties / bonuses
-        val trayValues = players.associate { player ->
-            player.userId to (playerTrays[player.userId] ?: emptyList())
-                .sumOf { effectiveLetterValues[it] ?: 0 }
-        }
-
-        val emptyTrayPlayer = players.find { (playerTrays[it.userId]?.isEmpty() == true) }
-
-        if (emptyTrayPlayer != null) {
-            // That player gains the sum of everyone else's remaining tiles
-            val bonus = trayValues.filterKeys { it != emptyTrayPlayer.userId }.values.sum()
-            scores[emptyTrayPlayer.userId] = (scores[emptyTrayPlayer.userId] ?: 0) + bonus
-            // Everyone else loses their tray value
-            players.filter { it.userId != emptyTrayPlayer.userId }.forEach { player ->
-                scores[player.userId] = (scores[player.userId] ?: 0) - (trayValues[player.userId] ?: 0)
-            }
-        } else {
-            // No one emptied their tray — everyone just loses their remaining tile values
-            players.forEach { player ->
-                scores[player.userId] = (scores[player.userId] ?: 0) - (trayValues[player.userId] ?: 0)
-            }
-        }
-
         val finalScores = scores.toMap()
         val winnerId = finalScores.maxByOrNull { it.value }?.key
 
         broadcastEvent(accessCode, server, "game_over", GameOverPayload(
             winnerId     = winnerId,
             finalScores  = finalScores,
-            trayPenalties = trayValues,
             reason        = reason    // "pouch_empty" | "deadlock"
         ))
 

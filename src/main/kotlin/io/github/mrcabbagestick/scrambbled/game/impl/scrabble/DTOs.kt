@@ -96,13 +96,11 @@ data class ScrabbleTurnStartPayload(
 
 /**
  * Broadcast when the game ends.
- * [trayPenalties] — remaining tile values per player (for display in the end screen).
  * [reason] — "pouch_empty" (normal end) or "deadlock" (everyone kept passing).
  */
 data class GameOverPayload(
     val winnerId: UUID?,
     val finalScores: Map<UUID, Int>,
-    val trayPenalties: Map<UUID, Int>,
     val reason: String
 )
 
